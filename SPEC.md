@@ -199,3 +199,9 @@ Informatica IDMC (Intelligent Data Management Cloud) の CDI（Cloud Data Integr
 - アプリケーション実装（今後）
 - Neo4j モデル定義・サンプルデータ（今後）
 - 操作手順書／運用設計書（今後）
+
+## 21. 初期実装メモ
+- MVP として Express ベースの REST API を追加。`GET /api/graph` で rootId 起点の依存グラフを取得し、Neo4j 未接続時はサンプルスナップショット（2024-01-01/2024-02-01）を返す実装を採用。
+- `GET /api/diff` で 2 つのスナップショット間のノード追加/削除を返却（リレーション差分は次段階で拡張）。
+- `GET /api/snapshots` で利用可能スナップショット一覧を返却。
+- 404/エラーハンドリングは `{code, message, details}` の形式で返す。
