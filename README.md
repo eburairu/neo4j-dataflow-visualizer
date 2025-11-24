@@ -20,6 +20,11 @@ npm start
 
 起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。`/` へアクセスした場合は `/api/health` へリダイレクトされます。
 
+### データフロー可視化 UI へのアクセス
+- `npm start` でサーバーを立ち上げた後、ブラウザから `http://localhost:4000/` にアクセスすると、API の疎通確認とサンプルリクエストを実行できるミニ UI（`public/index.html`）が表示されます。
+- 画面には「ヘルスチェック」「スナップショット一覧」「グラフ取得」「差分比較」のパネルがあり、各ボタン・フォームから `/api/health` `/api/snapshots` `/api/graph` `/api/diff` を呼び出して結果を即座に確認できます。
+- Neo4j を未設定の場合でも、サンプルスナップショットを使ってレスポンスを返すため、ローカル環境のみで UI の動作を確認できます。接続先 Neo4j を利用する場合は `.env` に `NEO4J_URI` などを設定した上で同じ手順でアクセスしてください。
+
 ## 提供 API（MVP）
 - `GET /api/graph?rootId=<id>&depth=2&direction=both&snapshot=2024-02-01T00:00:00Z`
   - 指定ルートから上下流のノードとエッジを取得。Neo4j が無い場合はサンプルデータを返します。
