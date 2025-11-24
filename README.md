@@ -18,7 +18,7 @@ Neo4j をバックエンドに IDMC CDI パイプラインの依存関係を可�
 npm start
 ```
 
-起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。
+起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。`/` へアクセスした場合は `/api/health` へリダイレクトされます。
 
 ## 提供 API（MVP）
 - `GET /api/graph?rootId=<id>&depth=2&direction=both&snapshot=2024-02-01T00:00:00Z`
