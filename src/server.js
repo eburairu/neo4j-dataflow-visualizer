@@ -16,6 +16,10 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api', graphRoutes);
 
+app.get('/', (_req, res) => {
+  res.redirect(302, '/api/health');
+});
+
 app.use((req, res) => {
   res.status(404).json({ code: 'NOT_FOUND', message: `No route matched ${req.path}` });
 });

@@ -18,7 +18,7 @@ Neo4j をバックエンドに IDMC CDI パイプラインの依存関係を可�
 npm start
 ```
 
-起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。
+起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。`/` へアクセスした場合は `/api/health` へリダイレクトされます。
 
 ## 提供 API（MVP）
 - `GET /api/graph?rootId=<id>&depth=2&direction=both&snapshot=2024-02-01T00:00:00Z`
@@ -29,6 +29,19 @@ npm start
   - 使用可能なサンプルスナップショット一覧を返します。
 - `GET /api/health`
   - サービスの稼働確認。
+
+## デプロイ方法と必要な Secrets
+
+`main` ブランチへの push をトリガーに、GitHub Actions から Vercel へ自動デプロイされます。
+
+1. GitHub リポジトリの Settings > Secrets and variables > Actions で以下を追加します。
+   - `VERCEL_TOKEN`: Vercel のデプロイトークン。
+   - `VERCEL_ORG_ID`: 対象チーム/組織の ID。
+   - `VERCEL_PROJECT_ID`: Vercel プロジェクト ID。
+2. `main` ブランチに push すると `.github/workflows/deploy.yml` が発火し、`npm ci` → `npm test` → `npm run build` → `vercel build` → `vercel deploy` を実行します。
+3. `vercel.json` で `src/server.js` を Node Functions としてデプロイし、すべてのリクエストを API にルーティングします。
+
+手動でデプロイしたい場合は、ローカルに Vercel CLI をインストールし、上記 Secrets と同じ値を環境変数に設定してから `npx vercel deploy --prod` を実行してください。
 
 ## 今後の拡張候補
 - `SPEC.md` に記載の差分ハイライト、タグ付け、検索/フィルタ UI などのフロントエンド実装
