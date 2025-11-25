@@ -3,35 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Neo4j Dataflow Visualizer API</title>
+    <title>Neo4j Dataflow Visualizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
     <style>
       :root {
-        color-scheme: light dark;
-        --bg: #0f172a;
-        --panel: #1e293b;
-        --accent: #38bdf8;
+        color-scheme: dark;
+        --bg: #0b1220;
+        --panel: #10182c;
+        --panel-strong: #0f172a;
+        --border: rgba(148, 163, 184, 0.25);
         --text: #e2e8f0;
-        --muted: #94a3b8;
+        --muted: #9aa7be;
+        --accent: #38bdf8;
+        --accent-2: #a855f7;
+        --success: #22c55e;
+        --warning: #f59e0b;
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       body {
         margin: 0;
         font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
-        background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.08), transparent 25%),
-          radial-gradient(circle at 80% 0%, rgba(59, 130, 246, 0.12), transparent 25%),
+        background: radial-gradient(circle at 10% 20%, rgba(56, 189, 248, 0.08), transparent 20%),
+          radial-gradient(circle at 90% 10%, rgba(168, 85, 247, 0.12), transparent 20%),
           var(--bg);
         color: var(--text);
         min-height: 100vh;
       }
 
       header {
-        padding: 32px 24px 8px;
+        padding: 32px 24px 16px;
+        border-bottom: 1px solid var(--border);
         text-align: center;
       }
 
       h1 {
-        margin: 0 0 12px;
-        font-size: 28px;
+        margin: 8px 0 4px;
+        font-size: clamp(24px, 3vw, 32px);
         letter-spacing: -0.5px;
       }
 
@@ -41,94 +52,151 @@
       }
 
       main {
-        max-width: 1000px;
+        max-width: 1400px;
         margin: 0 auto;
-        padding: 0 24px 32px;
-      }
-
-      .grid {
+        padding: 20px 24px 32px;
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        grid-template-columns: 320px 1fr 320px;
         gap: 16px;
-        margin-top: 24px;
+        align-items: start;
       }
 
-      .card {
-        background: rgba(30, 41, 59, 0.6);
-        border: 1px solid rgba(148, 163, 184, 0.2);
+      .panel {
+        background: linear-gradient(145deg, rgba(16, 24, 46, 0.9), rgba(15, 23, 42, 0.9));
+        border: 1px solid var(--border);
         border-radius: 16px;
-        padding: 18px;
-        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        padding: 16px;
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
       }
 
-      h2 {
+      .panel h2 {
         margin: 0 0 12px;
-        font-size: 20px;
+        font-size: 18px;
+        letter-spacing: -0.2px;
       }
 
-      form {
+      .control-grid {
         display: grid;
-        gap: 10px;
+        gap: 12px;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
       }
 
       label {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-        font-size: 14px;
         color: var(--muted);
+        font-size: 13px;
       }
 
       input,
       select,
-      button,
-      textarea {
+      button {
         font: inherit;
       }
 
       input,
-      select,
-      textarea {
+      select {
         padding: 10px 12px;
         border-radius: 12px;
-        border: 1px solid rgba(148, 163, 184, 0.35);
-        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.02);
         color: var(--text);
+      }
+
+      input:focus,
+      select:focus,
+      button:focus-visible {
+        outline: 2px solid rgba(56, 189, 248, 0.4);
+        outline-offset: 2px;
       }
 
       button {
         padding: 12px 14px;
         border-radius: 12px;
         border: none;
-        background: linear-gradient(135deg, #38bdf8, #6366f1);
+        background: linear-gradient(120deg, #38bdf8, #6366f1);
         color: #0b1220;
         font-weight: 700;
         cursor: pointer;
-        transition: transform 120ms ease, box-shadow 120ms ease;
-        box-shadow: 0 8px 20px rgba(56, 189, 248, 0.35);
+        transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+        box-shadow: 0 10px 24px rgba(56, 189, 248, 0.35);
+      }
+
+      button.secondary {
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text);
+        box-shadow: none;
       }
 
       button:hover {
         transform: translateY(-1px);
-        box-shadow: 0 12px 25px rgba(56, 189, 248, 0.45);
+        box-shadow: 0 12px 28px rgba(56, 189, 248, 0.45);
       }
 
-      .muted {
+      button.secondary:hover {
+        box-shadow: none;
+        border-color: rgba(56, 189, 248, 0.4);
+      }
+
+      .row {
+        display: flex;
+        gap: 10px;
+      }
+
+      .row button {
+        flex: 1;
+      }
+
+      .legend,
+      .stats,
+      .muted-text {
         color: var(--muted);
-        font-size: 14px;
+        font-size: 13px;
       }
 
-      pre {
-        background: rgba(15, 23, 42, 0.7);
-        border: 1px solid rgba(148, 163, 184, 0.2);
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+        margin-top: 8px;
+      }
+
+      .stat-card {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+      }
+
+      .stat-card strong {
+        display: block;
+        font-size: 20px;
+        color: #fff;
+      }
+
+      .graph-card {
+        background: linear-gradient(145deg, rgba(16, 24, 46, 0.9), rgba(6, 12, 24, 0.95));
+        border: 1px solid var(--border);
         border-radius: 16px;
-        padding: 14px;
-        color: var(--text);
-        overflow: auto;
+        padding: 12px;
+        box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35);
+        min-height: 580px;
       }
 
-      .output {
-        min-height: 120px;
+      #graph {
+        width: 100%;
+        height: 520px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+        position: relative;
+      }
+
+      .node.dimmed {
+        opacity: 0.18;
       }
 
       .badge {
@@ -141,110 +209,281 @@
         color: #38bdf8;
         font-weight: 600;
         font-size: 13px;
+        border: 1px solid rgba(56, 189, 248, 0.3);
       }
 
-      footer {
-        text-align: center;
-        padding: 12px 0 24px;
+      .health {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 12px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+        font-size: 13px;
+        color: var(--muted);
+        margin-top: 8px;
+      }
+
+      .dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: var(--warning);
+        display: inline-block;
+      }
+
+      .dot.ok {
+        background: var(--success);
+      }
+
+      .legend-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .legend-color {
+        width: 16px;
+        height: 16px;
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.15);
+      }
+
+      .detail-panel {
+        display: grid;
+        gap: 10px;
+      }
+
+      .detail-panel .section-title {
+        font-weight: 700;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .chip {
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 12px;
+      }
+
+      .pre {
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 10px;
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 12px;
         color: var(--muted);
       }
 
-      @media (max-width: 640px) {
+      .list {
+        margin: 0;
+        padding-left: 20px;
+        color: var(--muted);
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid var(--border);
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 1100px) {
+        main {
+          grid-template-columns: 1fr;
+        }
+
+        .graph-card {
+          order: -1;
+        }
+      }
+
+      @media (max-width: 768px) {
+        body {
+          padding: 0;
+        }
+
         header {
-          padding: 24px 16px 4px;
+          padding: 20px 16px 12px;
         }
 
         main {
-          padding: 0 16px 24px;
+          padding: 12px 12px 24px;
+          grid-template-columns: 1fr;
+        }
+
+        .panel,
+        .graph-card {
+          border-radius: 12px;
+          padding: 12px;
+        }
+
+        .row {
+          flex-direction: column;
+        }
+
+        #graph {
+          height: 420px;
+        }
+
+        button,
+        input,
+        select {
+          min-height: 46px;
         }
       }
     </style>
   </head>
   <body>
     <header>
-      <div class="badge">Vercel Ready UI</div>
-      <h1>Neo4j Dataflow Visualizer API</h1>
-      <p class="lead">デプロイ先のルートにアクセスすると、APIの状態確認と簡易リクエストができるUIです。</p>
+      <div class="badge">Live API Playground</div>
+      <h1>Neo4j Dataflow Visualizer</h1>
+      <p class="lead">API から取得した依存関係を即座に可視化。メダリオン層の色分けとノード詳細を確認できます。</p>
     </header>
 
     <main>
-      <div class="grid">
-        <section class="card">
-          <h2>ヘルスチェック</h2>
-          <p class="muted">/api/health にアクセスして現在のステータスを確認します。</p>
-          <button id="healthBtn" type="button">ステータスを取得</button>
-          <pre id="healthOutput" class="output">クリックしてレスポンスを確認</pre>
+      <section class="panel" aria-label="コントロール">
+        <h2>コントロール</h2>
+        <div class="control-grid">
+          <div class="field">
+            <label for="snapshotSelect">スナップショット</label>
+            <select id="snapshotSelect" name="snapshot"></select>
+          </div>
+          <div class="field">
+            <label for="rootId">起点ノード ID</label>
+            <input id="rootId" name="rootId" placeholder="例: ingest-oppty" value="ingest-oppty" />
+          </div>
+          <div class="field">
+            <label for="direction">方向</label>
+            <select id="direction" name="direction">
+              <option value="both">both (上下流)</option>
+              <option value="down">down (下流)</option>
+              <option value="up">up (上流)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="depth">深さ (1-5)</label>
+            <input id="depth" type="number" min="1" max="5" value="2" />
+          </div>
+          <div class="field">
+            <label for="search">名前でハイライト</label>
+            <input id="search" type="search" placeholder="例: Gold" />
+          </div>
+          <div class="row">
+            <button id="loadGraph">グラフを取得</button>
+            <button class="secondary" id="resetView" type="button">リセット</button>
+          </div>
+          <div class="health" id="healthStatus"><span class="dot"></span> API ステータスを確認中...</div>
+        </div>
+
+        <div class="legend" style="margin-top: 14px;">
+          <div class="legend-row"><span class="legend-color" style="background:#38bdf8"></span>Pipeline</div>
+          <div class="legend-row"><span class="legend-color" style="background:#22c55e"></span>Dataset (Silver)</div>
+          <div class="legend-row"><span class="legend-color" style="background:#f97316"></span>Dataset (Bronze)</div>
+          <div class="legend-row"><span class="legend-color" style="background:#facc15"></span>Dataset (Gold)</div>
+          <div class="legend-row"><span class="legend-color" style="background:#c084fc"></span>Schedule / Taskflow</div>
+          <div class="legend-row"><span class="legend-color" style="background:#0ea5e9"></span>External / BI</div>
+        </div>
+      </section>
+
+      <section class="graph-card" aria-label="グラフ表示">
+        <div class="row" style="align-items:center; justify-content: space-between; padding: 0 8px 8px;">
+          <div>
+            <div class="badge">Graph Explorer</div>
+            <div class="muted-text" id="graphSummary">ノードとエッジをロードしてください。</div>
+          </div>
+          <div class="muted-text" id="lastUpdated"></div>
+        </div>
+          <div id="graph" role="presentation"></div>
+          <div class="muted-text" style="padding: 8px; display:flex; gap:10px; flex-wrap:wrap;">
+            <span class="pill">ドラッグ: ノード移動</span>
+            <span class="pill">ホイール: ズーム</span>
+            <span class="pill">クリック: 詳細表示</span>
+            <span class="pill">Shift + ドラッグ: パン</span>
+            <span class="pill">ピンチ/二本指: ズーム・パン</span>
+          </div>
         </section>
 
-        <section class="card">
-          <h2>スナップショット一覧</h2>
-          <p class="muted">利用可能なスナップショットをロードしてフォームに反映します。</p>
-          <button id="snapshotBtn" type="button">スナップショットを取得</button>
-          <pre id="snapshotOutput" class="output">まだ読み込んでいません</pre>
-        </section>
-      </div>
+      <section class="panel" aria-label="詳細・差分">
+        <h2>ノード詳細</h2>
+        <div class="detail-panel" id="details">
+          <div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>
+        </div>
 
-      <div class="grid">
-        <section class="card">
-          <h2>グラフ取得</h2>
-          <form id="graphForm">
-            <label>
-              rootId
-              <input id="rootId" name="rootId" placeholder="例: ingest-oppty" value="ingest-oppty" required />
-            </label>
-            <label>
-              depth
-              <input id="depth" name="depth" type="number" min="1" max="5" value="2" />
-            </label>
-            <label>
-              direction
-              <select id="direction" name="direction">
-                <option value="both">both</option>
-                <option value="down">down</option>
-                <option value="up">up</option>
-              </select>
-            </label>
-            <label>
-              snapshot
-              <select id="snapshot" name="snapshot"></select>
-            </label>
-            <button type="submit">/api/graph を呼び出す</button>
-          </form>
-          <pre id="graphOutput" class="output">レスポンスがここに表示されます</pre>
-        </section>
-
-        <section class="card">
-          <h2>差分比較</h2>
-          <form id="diffForm">
-            <label>
-              base
+        <div class="panel" style="margin-top: 16px; background: var(--panel-strong);">
+          <h2 style="margin-bottom:8px;">差分比較</h2>
+          <form id="diffForm" class="control-grid">
+            <div class="field">
+              <label for="baseSnapshot">Base</label>
               <select id="baseSnapshot" name="base"></select>
-            </label>
-            <label>
-              target
+            </div>
+            <div class="field">
+              <label for="targetSnapshot">Target</label>
               <select id="targetSnapshot" name="target"></select>
-            </label>
-            <button type="submit">/api/diff を呼び出す</button>
+            </div>
+            <button type="submit">差分を取得</button>
           </form>
-          <pre id="diffOutput" class="output">レスポンスがここに表示されます</pre>
-        </section>
-      </div>
+          <div class="pre" id="diffOutput" style="margin-top:10px;">まだ取得していません</div>
+        </div>
+      </section>
     </main>
 
-    <footer>© 2024 Neo4j Dataflow Visualizer</footer>
-
     <script>
-      const healthBtn = document.getElementById('healthBtn');
-      const snapshotBtn = document.getElementById('snapshotBtn');
-      const snapshotOutput = document.getElementById('snapshotOutput');
-      const healthOutput = document.getElementById('healthOutput');
-      const graphForm = document.getElementById('graphForm');
+      const snapshotSelect = document.getElementById('snapshotSelect');
+      const baseSnapshot = document.getElementById('baseSnapshot');
+      const targetSnapshot = document.getElementById('targetSnapshot');
+      const rootInput = document.getElementById('rootId');
+      const depthInput = document.getElementById('depth');
+      const directionSelect = document.getElementById('direction');
+      const searchInput = document.getElementById('search');
+      const loadGraphBtn = document.getElementById('loadGraph');
+      const resetViewBtn = document.getElementById('resetView');
+      const healthStatus = document.getElementById('healthStatus');
+      const graphSummary = document.getElementById('graphSummary');
+      const lastUpdated = document.getElementById('lastUpdated');
       const diffForm = document.getElementById('diffForm');
-      const graphOutput = document.getElementById('graphOutput');
       const diffOutput = document.getElementById('diffOutput');
-      const snapshotSelect = document.getElementById('snapshot');
-      const baseSelect = document.getElementById('baseSnapshot');
-      const targetSelect = document.getElementById('targetSnapshot');
+      const details = document.getElementById('details');
+      const graphContainer = document.getElementById('graph');
+
+      let currentData = { nodes: [], edges: [] };
+      let simulation;
+      let svg;
+      let zoomLayer;
+
+      const labelColors = {
+        Pipeline: '#38bdf8',
+        Dataset: '#22c55e',
+        ExternalSystem: '#0ea5e9',
+        BIApp: '#0ea5e9',
+        Schedule: '#c084fc',
+      };
+
+      function colorForNode(node) {
+        if (node.label === 'Dataset') {
+          if (node.layer === 'Bronze') return '#f97316';
+          if (node.layer === 'Gold' || node.type === 'DataMart') return '#facc15';
+          return '#22c55e';
+        }
+        if (node.label === 'Pipeline' && node.type === 'Taskflow') return '#c084fc';
+        return labelColors[node.label] || '#94a3b8';
+      }
 
       function formatJson(data) {
         return JSON.stringify(data, null, 2);
@@ -259,53 +498,349 @@
         return res.json();
       }
 
+      function updateHealth(status) {
+        const dot = healthStatus.querySelector('.dot');
+        if (status.ok) {
+          dot.classList.add('ok');
+          healthStatus.innerHTML = `<span class="dot ok"></span> API Healthy (${status.env || 'sample'})`;
+        } else {
+          dot.classList.remove('ok');
+          healthStatus.innerHTML = `<span class="dot"></span> API 未応答`;
+        }
+      }
+
+      function renderStats(data) {
+        const counts = {
+          totalNodes: data.nodes.length,
+          totalEdges: data.edges.length,
+          pipelines: data.nodes.filter((n) => n.label === 'Pipeline').length,
+          datasets: data.nodes.filter((n) => n.label === 'Dataset').length,
+        };
+
+        graphSummary.textContent = `ノード ${counts.totalNodes} 件 / エッジ ${counts.totalEdges} 件 | Pipeline ${counts.pipelines}, Dataset ${counts.datasets}`;
+      }
+
+      function renderDetails(item) {
+        if (!item) {
+          details.innerHTML = '<div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>';
+          return;
+        }
+
+        if (item.source && item.target) {
+          const from = item.source.id || item.source;
+          const to = item.target.id || item.target;
+          details.innerHTML = `
+            <div class="chips">
+              <span class="chip">Relation</span>
+              ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
+            </div>
+            <div>
+              <div class="section-title">${from} → ${to}</div>
+              <div class="muted-text">上流: ${from}</div>
+              <div class="muted-text">下流: ${to}</div>
+            </div>
+            <div class="pre">${formatJson({ ...item, source: from, target: to })}</div>
+          `;
+          return;
+        }
+
+        const connected = currentData.edges.filter((e) => e.from === item.id || e.to === item.id);
+        const upstream = connected.filter((e) => e.to === item.id).map((e) => e.from);
+        const downstream = connected.filter((e) => e.from === item.id).map((e) => e.to);
+
+        details.innerHTML = `
+          <div class="chips">
+            <span class="chip">${item.label}</span>
+            ${item.layer ? `<span class="chip">Layer: ${item.layer}</span>` : ''}
+            ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
+          </div>
+          <div>
+            <div class="section-title">${item.name || item.id}</div>
+            <div class="muted-text">ID: ${item.id}</div>
+          </div>
+          <div>
+            <div class="section-title">接続ノード</div>
+            <div class="muted-text">上流: ${upstream.length ? upstream.join(', ') : 'なし'}</div>
+            <div class="muted-text">下流: ${downstream.length ? downstream.join(', ') : 'なし'}</div>
+          </div>
+          <div class="pre">${formatJson(item)}</div>
+          <button class="secondary" id="useAsRoot">このノードを起点に再探索</button>
+        `;
+
+        document.getElementById('useAsRoot').onclick = () => {
+          rootInput.value = item.id;
+          loadGraph();
+        };
+      }
+
+      function applySearchHighlight(term) {
+        const lowered = term.trim().toLowerCase();
+        if (!svg) return;
+
+        svg.selectAll('g.node').classed('dimmed', (d) => {
+          if (!lowered) return false;
+          return !(d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered));
+        });
+      }
+
+      function initSimulation(width, height, nodes, links, xPositions) {
+        if (simulation) simulation.stop();
+
+        const maxDepth = Math.max(...Array.from(xPositions.values()));
+        const xScale = d3
+          .scaleLinear()
+          .domain([0, maxDepth || 1])
+          .range([48, width - 48]);
+
+        simulation = d3
+          .forceSimulation(nodes)
+          .force(
+            'link',
+            d3
+              .forceLink(links)
+              .id((d) => d.id)
+              .distance(140)
+              .strength(0.6)
+          )
+          .force('charge', d3.forceManyBody().strength(-420))
+          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collision', d3.forceCollide().radius(70));
+      }
+
+      function computeLeftToRightPositions(nodes, links) {
+        const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
+        const indegree = new Map(nodes.map((n) => [n.id, 0]));
+        const graph = new Map(nodes.map((n) => [n.id, []]));
+
+        links.forEach((edge) => {
+          const from = edge.from;
+          const to = edge.to;
+          if (!graph.has(from)) graph.set(from, []);
+          graph.get(from).push(to);
+          indegree.set(to, (indegree.get(to) || 0) + 1);
+        });
+
+        const queue = [];
+        if (rootInput.value && depth.has(rootInput.value)) {
+          depth.set(rootInput.value, 0);
+          queue.push(rootInput.value);
+        } else {
+          nodes.forEach((node) => {
+            if ((indegree.get(node.id) || 0) === 0) {
+              depth.set(node.id, 0);
+              queue.push(node.id);
+            }
+          });
+        }
+
+        if (!queue.length && nodes.length) {
+          depth.set(nodes[0].id, 0);
+          queue.push(nodes[0].id);
+        }
+
+        while (queue.length) {
+          const current = queue.shift();
+          const currentDepth = depth.get(current);
+          (graph.get(current) || []).forEach((next) => {
+            if (depth.get(next) > currentDepth + 1) {
+              depth.set(next, currentDepth + 1);
+              queue.push(next);
+            }
+          });
+        }
+
+        const finiteDepths = Array.from(depth.values()).filter((d) => Number.isFinite(d));
+        const fallback = finiteDepths.length ? Math.max(...finiteDepths) : 0;
+        nodes.forEach((node) => {
+          if (!Number.isFinite(depth.get(node.id))) depth.set(node.id, fallback);
+        });
+
+        return depth;
+      }
+
+      function renderGraph(data) {
+        const nodes = data.nodes || [];
+        const nodeIds = new Set(nodes.map((node) => node.id));
+        const normalizedEdges = (data.edges || [])
+          .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
+          .map((edge) => ({ ...edge, source: edge.from, target: edge.to }));
+
+        currentData = { nodes, edges: normalizedEdges };
+        renderStats(currentData);
+
+        if (!nodes.length) {
+          graphSummary.textContent = 'ノードが見つかりませんでした。rootId を確認してください。';
+          d3.select(graphContainer).selectAll('*').remove();
+          return;
+        }
+
+        const width = graphContainer.clientWidth;
+        const height = graphContainer.clientHeight;
+
+        d3.select(graphContainer).selectAll('*').remove();
+
+        svg = d3
+          .select('#graph')
+          .append('svg')
+          .attr('width', width)
+          .attr('height', height)
+          .style('cursor', 'grab');
+
+        const defs = svg.append('defs');
+        defs
+          .append('marker')
+          .attr('id', 'arrow')
+          .attr('viewBox', '0 -5 10 10')
+          .attr('refX', 18)
+          .attr('refY', 0)
+          .attr('markerWidth', 7)
+          .attr('markerHeight', 7)
+          .attr('orient', 'auto')
+          .append('path')
+          .attr('d', 'M0,-5L10,0L0,5')
+          .attr('fill', 'rgba(255,255,255,0.7)');
+
+        zoomLayer = svg.append('g');
+
+        const link = zoomLayer
+          .append('g')
+          .attr('stroke', 'rgba(255,255,255,0.25)')
+          .attr('stroke-width', 1.4)
+          .selectAll('line')
+          .data(normalizedEdges)
+          .enter()
+          .append('line')
+          .attr('marker-end', 'url(#arrow)')
+          .on('click pointerdown', (event, d) => {
+            event.stopPropagation();
+            renderDetails(d);
+          });
+
+        const nodeGroup = zoomLayer
+          .append('g')
+          .selectAll('g')
+          .data(nodes)
+          .enter()
+          .append('g')
+          .attr('class', 'node')
+          .call(
+            d3
+              .drag()
+              .on('start', (event, d) => {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                d.fx = d.x;
+                d.fy = d.y;
+              })
+              .on('drag', (event, d) => {
+                d.fx = event.x;
+                d.fy = event.y;
+              })
+              .on('end', (event, d) => {
+                if (!event.active) simulation.alphaTarget(0);
+                d.fx = null;
+                d.fy = null;
+              })
+          )
+          .on('click pointerdown', (event, d) => {
+            event.stopPropagation();
+            renderDetails(d);
+          });
+
+        nodeGroup
+          .append('circle')
+          .attr('r', 18)
+          .attr('fill', (d) => colorForNode(d))
+          .attr('stroke', 'rgba(255,255,255,0.6)')
+          .attr('stroke-width', 1.1)
+          .attr('opacity', 0.9);
+
+        nodeGroup
+          .append('text')
+          .attr('x', 22)
+          .attr('y', 5)
+          .text((d) => d.name || d.id)
+          .attr('fill', '#e2e8f0')
+          .attr('font-size', 12)
+          .attr('font-weight', 600);
+
+        nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
+
+        const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
+
+        initSimulation(width, height, nodes, normalizedEdges, xPositions);
+
+        simulation.on('tick', () => {
+          link
+            .attr('x1', (d) => d.source.x)
+            .attr('y1', (d) => d.source.y)
+            .attr('x2', (d) => d.target.x)
+            .attr('y2', (d) => d.target.y);
+
+          nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
+        });
+
+        svg.call(
+          d3
+            .zoom()
+            .scaleExtent([0.4, 2])
+            .on('zoom', (event) => {
+              zoomLayer.attr('transform', event.transform);
+            })
+        );
+
+        applySearchHighlight(searchInput.value);
+      }
+
       async function loadSnapshots() {
         try {
           const data = await fetchJson('/api/snapshots');
           const snapshots = data.snapshots || [];
-          snapshotOutput.textContent = formatJson(snapshots);
-          [snapshotSelect, baseSelect, targetSelect].forEach((select) => {
+          [snapshotSelect, baseSnapshot, targetSnapshot].forEach((select) => {
             select.innerHTML = '';
-            snapshots.forEach((snap, index) => {
+            snapshots.forEach((snap, idx) => {
               const option = document.createElement('option');
               option.value = snap;
               option.textContent = snap;
-              if (index === 0 && select.options.length === 0) {
-                option.selected = true;
-              }
+              if (idx === snapshots.length - 1 && select === snapshotSelect) option.selected = true;
               select.appendChild(option);
             });
           });
+          lastUpdated.textContent = `Snapshots: ${snapshots.join(' / ')}`;
         } catch (error) {
-          snapshotOutput.textContent = `エラー: ${error.message}`;
+          lastUpdated.textContent = `スナップショット取得に失敗しました: ${error.message}`;
         }
       }
 
-      healthBtn.addEventListener('click', async () => {
-        try {
-          const data = await fetchJson('/api/health');
-          healthOutput.textContent = formatJson(data);
-        } catch (error) {
-          healthOutput.textContent = `エラー: ${error.message}`;
-        }
-      });
-
-      snapshotBtn.addEventListener('click', loadSnapshots);
-
-      graphForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const params = new URLSearchParams(new FormData(graphForm));
-        graphOutput.textContent = 'Loading...';
+      async function loadGraph() {
+        const params = new URLSearchParams({
+          rootId: rootInput.value.trim(),
+          depth: depthInput.value,
+          direction: directionSelect.value,
+          snapshot: snapshotSelect.value,
+        });
+        graphSummary.textContent = 'ロード中...';
+        lastUpdated.textContent = '';
         try {
           const data = await fetchJson(`/api/graph?${params.toString()}`);
-          graphOutput.textContent = formatJson(data);
+          renderGraph(data);
+          lastUpdated.textContent = `last updated ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value}`;
         } catch (error) {
-          graphOutput.textContent = `エラー: ${error.message}`;
+          graphSummary.textContent = `エラー: ${error.message}`;
         }
-      });
+      }
 
-      diffForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
+      async function loadHealth() {
+        try {
+          const data = await fetchJson('/api/health');
+          updateHealth(data);
+        } catch (error) {
+          updateHealth({ ok: false });
+        }
+      }
+
+      async function loadDiff(event) {
+        event?.preventDefault();
         const params = new URLSearchParams(new FormData(diffForm));
         diffOutput.textContent = 'Loading...';
         try {
@@ -314,11 +849,25 @@
         } catch (error) {
           diffOutput.textContent = `エラー: ${error.message}`;
         }
-      });
+      }
 
-      // 初期ロード
-      loadSnapshots();
-      healthBtn.click();
+      loadGraphBtn.addEventListener('click', loadGraph);
+      resetViewBtn.addEventListener('click', () => {
+        rootInput.value = 'ingest-oppty';
+        depthInput.value = 2;
+        directionSelect.value = 'both';
+        searchInput.value = '';
+        renderDetails(null);
+        applySearchHighlight('');
+      });
+      searchInput.addEventListener('input', (event) => applySearchHighlight(event.target.value));
+      diffForm.addEventListener('submit', loadDiff);
+
+      (async function init() {
+        await loadSnapshots();
+        await loadHealth();
+        await loadGraph();
+      })();
     </script>
   </body>
 </html>
