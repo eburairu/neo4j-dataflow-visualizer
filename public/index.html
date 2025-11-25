@@ -423,7 +423,7 @@
       <section class="panel" aria-label="詳細・差分">
         <h2>ノード詳細</h2>
         <div class="detail-panel" id="details">
-          <div class="muted-text">ノードをクリックすると詳細が表示されます。</div>
+          <div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>
         </div>
 
         <div class="panel" style="margin-top: 16px; background: var(--panel-strong);">
@@ -520,37 +520,55 @@
         graphSummary.textContent = `ノード ${counts.totalNodes} 件 / エッジ ${counts.totalEdges} 件 | Pipeline ${counts.pipelines}, Dataset ${counts.datasets}`;
       }
 
-      function renderDetails(node) {
-        if (!node) {
-          details.innerHTML = '<div class="muted-text">ノードをクリックすると詳細が表示されます。</div>';
+      function renderDetails(item) {
+        if (!item) {
+          details.innerHTML = '<div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>';
           return;
         }
 
-        const connected = currentData.edges.filter((e) => e.from === node.id || e.to === node.id);
-        const upstream = connected.filter((e) => e.to === node.id).map((e) => e.from);
-        const downstream = connected.filter((e) => e.from === node.id).map((e) => e.to);
+        if (item.source && item.target) {
+          const from = item.source.id || item.source;
+          const to = item.target.id || item.target;
+          details.innerHTML = `
+            <div class="chips">
+              <span class="chip">Relation</span>
+              ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
+            </div>
+            <div>
+              <div class="section-title">${from} → ${to}</div>
+              <div class="muted-text">上流: ${from}</div>
+              <div class="muted-text">下流: ${to}</div>
+            </div>
+            <div class="pre">${formatJson({ ...item, source: from, target: to })}</div>
+          `;
+          return;
+        }
+
+        const connected = currentData.edges.filter((e) => e.from === item.id || e.to === item.id);
+        const upstream = connected.filter((e) => e.to === item.id).map((e) => e.from);
+        const downstream = connected.filter((e) => e.from === item.id).map((e) => e.to);
 
         details.innerHTML = `
           <div class="chips">
-            <span class="chip">${node.label}</span>
-            ${node.layer ? `<span class="chip">Layer: ${node.layer}</span>` : ''}
-            ${node.type ? `<span class="chip">Type: ${node.type}</span>` : ''}
+            <span class="chip">${item.label}</span>
+            ${item.layer ? `<span class="chip">Layer: ${item.layer}</span>` : ''}
+            ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
           </div>
           <div>
-            <div class="section-title">${node.name || node.id}</div>
-            <div class="muted-text">ID: ${node.id}</div>
+            <div class="section-title">${item.name || item.id}</div>
+            <div class="muted-text">ID: ${item.id}</div>
           </div>
           <div>
             <div class="section-title">接続ノード</div>
             <div class="muted-text">上流: ${upstream.length ? upstream.join(', ') : 'なし'}</div>
             <div class="muted-text">下流: ${downstream.length ? downstream.join(', ') : 'なし'}</div>
           </div>
-          <div class="pre">${formatJson(node)}</div>
+          <div class="pre">${formatJson(item)}</div>
           <button class="secondary" id="useAsRoot">このノードを起点に再探索</button>
         `;
 
         document.getElementById('useAsRoot').onclick = () => {
-          rootInput.value = node.id;
+          rootInput.value = item.id;
           loadGraph();
         };
       }
@@ -565,8 +583,14 @@
         });
       }
 
-      function initSimulation(width, height, nodes, links) {
+      function initSimulation(width, height, nodes, links, xPositions) {
         if (simulation) simulation.stop();
+
+        const maxDepth = Math.max(...Array.from(xPositions.values()));
+        const xScale = d3
+          .scaleLinear()
+          .domain([0, maxDepth || 1])
+          .range([48, width - 48]);
 
         simulation = d3
           .forceSimulation(nodes)
@@ -579,8 +603,60 @@
               .strength(0.6)
           )
           .force('charge', d3.forceManyBody().strength(-420))
+          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
           .force('center', d3.forceCenter(width / 2, height / 2))
           .force('collision', d3.forceCollide().radius(70));
+      }
+
+      function computeLeftToRightPositions(nodes, links) {
+        const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
+        const indegree = new Map(nodes.map((n) => [n.id, 0]));
+        const graph = new Map(nodes.map((n) => [n.id, []]));
+
+        links.forEach((edge) => {
+          const from = edge.from;
+          const to = edge.to;
+          if (!graph.has(from)) graph.set(from, []);
+          graph.get(from).push(to);
+          indegree.set(to, (indegree.get(to) || 0) + 1);
+        });
+
+        const queue = [];
+        if (rootInput.value && depth.has(rootInput.value)) {
+          depth.set(rootInput.value, 0);
+          queue.push(rootInput.value);
+        } else {
+          nodes.forEach((node) => {
+            if ((indegree.get(node.id) || 0) === 0) {
+              depth.set(node.id, 0);
+              queue.push(node.id);
+            }
+          });
+        }
+
+        if (!queue.length && nodes.length) {
+          depth.set(nodes[0].id, 0);
+          queue.push(nodes[0].id);
+        }
+
+        while (queue.length) {
+          const current = queue.shift();
+          const currentDepth = depth.get(current);
+          (graph.get(current) || []).forEach((next) => {
+            if (depth.get(next) > currentDepth + 1) {
+              depth.set(next, currentDepth + 1);
+              queue.push(next);
+            }
+          });
+        }
+
+        const finiteDepths = Array.from(depth.values()).filter((d) => Number.isFinite(d));
+        const fallback = finiteDepths.length ? Math.max(...finiteDepths) : 0;
+        nodes.forEach((node) => {
+          if (!Number.isFinite(depth.get(node.id))) depth.set(node.id, fallback);
+        });
+
+        return depth;
       }
 
       function renderGraph(data) {
@@ -635,7 +711,11 @@
           .data(normalizedEdges)
           .enter()
           .append('line')
-          .attr('marker-end', 'url(#arrow)');
+          .attr('marker-end', 'url(#arrow)')
+          .on('click pointerdown', (event, d) => {
+            event.stopPropagation();
+            renderDetails(d);
+          });
 
         const nodeGroup = zoomLayer
           .append('g')
@@ -662,7 +742,10 @@
                 d.fy = null;
               })
           )
-          .on('click', (_, d) => renderDetails(d));
+          .on('click pointerdown', (event, d) => {
+            event.stopPropagation();
+            renderDetails(d);
+          });
 
         nodeGroup
           .append('circle')
@@ -683,7 +766,9 @@
 
         nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
 
-        initSimulation(width, height, nodes, normalizedEdges);
+        const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
+
+        initSimulation(width, height, nodes, normalizedEdges, xPositions);
 
         simulation.on('tick', () => {
           link
