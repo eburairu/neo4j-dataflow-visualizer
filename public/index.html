@@ -313,6 +313,41 @@
           order: -1;
         }
       }
+
+      @media (max-width: 768px) {
+        body {
+          padding: 0;
+        }
+
+        header {
+          padding: 20px 16px 12px;
+        }
+
+        main {
+          padding: 12px 12px 24px;
+          grid-template-columns: 1fr;
+        }
+
+        .panel,
+        .graph-card {
+          border-radius: 12px;
+          padding: 12px;
+        }
+
+        .row {
+          flex-direction: column;
+        }
+
+        #graph {
+          height: 420px;
+        }
+
+        button,
+        input,
+        select {
+          min-height: 46px;
+        }
+      }
     </style>
   </head>
   <body>
@@ -375,14 +410,15 @@
           </div>
           <div class="muted-text" id="lastUpdated"></div>
         </div>
-        <div id="graph" role="presentation"></div>
-        <div class="muted-text" style="padding: 8px; display:flex; gap:10px; flex-wrap:wrap;">
-          <span class="pill">ドラッグ: ノード移動</span>
-          <span class="pill">ホイール: ズーム</span>
-          <span class="pill">クリック: 詳細表示</span>
-          <span class="pill">Shift + ドラッグ: パン</span>
-        </div>
-      </section>
+          <div id="graph" role="presentation"></div>
+          <div class="muted-text" style="padding: 8px; display:flex; gap:10px; flex-wrap:wrap;">
+            <span class="pill">ドラッグ: ノード移動</span>
+            <span class="pill">ホイール: ズーム</span>
+            <span class="pill">クリック: 詳細表示</span>
+            <span class="pill">Shift + ドラッグ: パン</span>
+            <span class="pill">ピンチ/二本指: ズーム・パン</span>
+          </div>
+        </section>
 
       <section class="panel" aria-label="詳細・差分">
         <h2>ノード詳細</h2>
@@ -548,8 +584,20 @@
       }
 
       function renderGraph(data) {
-        currentData = data;
-        renderStats(data);
+        const nodes = data.nodes || [];
+        const nodeIds = new Set(nodes.map((node) => node.id));
+        const normalizedEdges = (data.edges || [])
+          .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
+          .map((edge) => ({ ...edge, source: edge.from, target: edge.to }));
+
+        currentData = { nodes, edges: normalizedEdges };
+        renderStats(currentData);
+
+        if (!nodes.length) {
+          graphSummary.textContent = 'ノードが見つかりませんでした。rootId を確認してください。';
+          d3.select(graphContainer).selectAll('*').remove();
+          return;
+        }
 
         const width = graphContainer.clientWidth;
         const height = graphContainer.clientHeight;
@@ -584,7 +632,7 @@
           .attr('stroke', 'rgba(255,255,255,0.25)')
           .attr('stroke-width', 1.4)
           .selectAll('line')
-          .data(data.edges)
+          .data(normalizedEdges)
           .enter()
           .append('line')
           .attr('marker-end', 'url(#arrow)');
@@ -592,7 +640,7 @@
         const nodeGroup = zoomLayer
           .append('g')
           .selectAll('g')
-          .data(data.nodes)
+          .data(nodes)
           .enter()
           .append('g')
           .attr('class', 'node')
@@ -635,7 +683,7 @@
 
         nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
 
-        initSimulation(width, height, data.nodes, data.edges);
+        initSimulation(width, height, nodes, normalizedEdges);
 
         simulation.on('tick', () => {
           link
