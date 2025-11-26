@@ -555,13 +555,6 @@
         return labelColors[node.label] || '#94a3b8';
       }
 
-      function normalizeEdgeForFlow(edge) {
-        if (edge.type === 'READS_FROM') {
-          return { ...edge, from: edge.to, to: edge.from };
-        }
-        return edge;
-      }
-
       function formatJson(data) {
         return JSON.stringify(data, null, 2);
       }
@@ -670,14 +663,8 @@
         });
       }
 
-      function initSimulation(width, height, nodes, links, xPositions) {
+      function initSimulation(width, height, nodes, links) {
         if (simulation) simulation.stop();
-
-        const maxDepth = Math.max(...Array.from(xPositions.values()));
-        const xScale = d3
-          .scaleLinear()
-          .domain([0, maxDepth || 1])
-          .range([48, width - 48]);
 
         simulation = d3
           .forceSimulation(nodes)
@@ -690,67 +677,14 @@
               .strength(0.6)
           )
           .force('charge', d3.forceManyBody().strength(-420))
-          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
           .force('center', d3.forceCenter(width / 2, height / 2))
           .force('collision', d3.forceCollide().radius(70));
-      }
-
-      function computeLeftToRightPositions(nodes, links) {
-        const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
-        const indegree = new Map(nodes.map((n) => [n.id, 0]));
-        const graph = new Map(nodes.map((n) => [n.id, []]));
-
-        links.forEach((edge) => {
-          const from = edge.from;
-          const to = edge.to;
-          if (!graph.has(from)) graph.set(from, []);
-          graph.get(from).push(to);
-          indegree.set(to, (indegree.get(to) || 0) + 1);
-        });
-
-        const queue = [];
-        if (rootInput.value && depth.has(rootInput.value)) {
-          depth.set(rootInput.value, 0);
-          queue.push(rootInput.value);
-        } else {
-          nodes.forEach((node) => {
-            if ((indegree.get(node.id) || 0) === 0) {
-              depth.set(node.id, 0);
-              queue.push(node.id);
-            }
-          });
-        }
-
-        if (!queue.length && nodes.length) {
-          depth.set(nodes[0].id, 0);
-          queue.push(nodes[0].id);
-        }
-
-        while (queue.length) {
-          const current = queue.shift();
-          const currentDepth = depth.get(current);
-          (graph.get(current) || []).forEach((next) => {
-            if (depth.get(next) > currentDepth + 1) {
-              depth.set(next, currentDepth + 1);
-              queue.push(next);
-            }
-          });
-        }
-
-        const finiteDepths = Array.from(depth.values()).filter((d) => Number.isFinite(d));
-        const fallback = finiteDepths.length ? Math.max(...finiteDepths) : 0;
-        nodes.forEach((node) => {
-          if (!Number.isFinite(depth.get(node.id))) depth.set(node.id, fallback);
-        });
-
-        return depth;
       }
 
       function renderGraph(data) {
         const nodes = data.nodes || [];
         const nodeIds = new Set(nodes.map((node) => node.id));
-        const orientedEdges = (data.edges || []).map(normalizeEdgeForFlow);
-        const normalizedEdges = orientedEdges
+        const normalizedEdges = (data.edges || [])
           .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
           .map((edge) => ({ ...edge, source: edge.from, target: edge.to }));
 
@@ -765,18 +699,6 @@
 
         const width = graphContainer.clientWidth;
         const height = graphContainer.clientHeight;
-
-        const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
-        const maxDepth = Math.max(...Array.from(xPositions.values()));
-        const xScale = d3
-          .scaleLinear()
-          .domain([0, maxDepth || 1])
-          .range([48, width - 48]);
-
-        nodes.forEach((node, idx) => {
-          node.x = xScale(xPositions.get(node.id) || 0);
-          node.y = height / 2 + ((idx % 5) - 2) * 22;
-        });
 
         d3.select(graphContainer).selectAll('*').remove();
 
@@ -849,26 +771,51 @@
             renderDetails(d);
           });
 
-        nodeGroup
-          .append('circle')
-          .attr('r', 18)
-          .attr('fill', (d) => colorForNode(d))
-          .attr('stroke', 'rgba(255,255,255,0.6)')
-          .attr('stroke-width', 1.1)
-          .attr('opacity', 0.9);
+        const rectWidth = 150;
+        const rectHeight = 36;
 
-        nodeGroup
-          .append('text')
-          .attr('x', 22)
-          .attr('y', 5)
-          .text((d) => d.name || d.id)
-          .attr('fill', '#e2e8f0')
-          .attr('font-size', 12)
-          .attr('font-weight', 600);
+        nodeGroup.each(function (d) {
+          const group = d3.select(this);
+          const isStorage =
+            d.label === 'Dataset' || ['Table', 'ObjectStorage', 'Bucket', 'View', 'File'].includes(d.type);
+
+          if (isStorage) {
+            group
+              .append('rect')
+              .attr('x', -rectWidth / 2)
+              .attr('y', -rectHeight / 2)
+              .attr('rx', 8)
+              .attr('ry', 8)
+              .attr('width', rectWidth)
+              .attr('height', rectHeight)
+              .attr('fill', (n) => colorForNode(n))
+              .attr('stroke', 'rgba(255,255,255,0.6)')
+              .attr('stroke-width', 1.1)
+              .attr('opacity', 0.9);
+          } else {
+            group
+              .append('circle')
+              .attr('r', 18)
+              .attr('fill', (n) => colorForNode(n))
+              .attr('stroke', 'rgba(255,255,255,0.6)')
+              .attr('stroke-width', 1.1)
+              .attr('opacity', 0.9);
+          }
+
+          group
+            .append('text')
+            .attr('x', 0)
+            .attr('y', 5)
+            .attr('text-anchor', 'middle')
+            .text((n) => n.name || n.id)
+            .attr('fill', '#e2e8f0')
+            .attr('font-size', 12)
+            .attr('font-weight', 600);
+        });
 
         nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
 
-        initSimulation(width, height, nodes, normalizedEdges, xPositions);
+        initSimulation(width, height, nodes, normalizedEdges);
 
         simulation.on('tick', () => {
           link
