@@ -432,7 +432,7 @@
           </div>
           <div class="field">
             <label for="depth">深さ (1-5)</label>
-            <input id="depth" type="number" min="1" max="5" value="2" />
+            <input id="depth" type="number" min="1" max="5" value="5" />
           </div>
           <div class="field">
             <label for="search">名前でハイライト</label>
@@ -663,8 +663,65 @@
         });
       }
 
-      function initSimulation(width, height, nodes, links) {
+      function computeLeftToRightPositions(nodes, links) {
+        const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
+        const indegree = new Map(nodes.map((n) => [n.id, 0]));
+        const graph = new Map(nodes.map((n) => [n.id, []]));
+
+        links.forEach((edge) => {
+          const from = edge.from;
+          const to = edge.to;
+          if (!graph.has(from)) graph.set(from, []);
+          graph.get(from).push(to);
+          indegree.set(to, (indegree.get(to) || 0) + 1);
+        });
+
+        const queue = [];
+        if (rootInput.value && depth.has(rootInput.value)) {
+          depth.set(rootInput.value, 0);
+          queue.push(rootInput.value);
+        } else {
+          nodes.forEach((node) => {
+            if ((indegree.get(node.id) || 0) === 0) {
+              depth.set(node.id, 0);
+              queue.push(node.id);
+            }
+          });
+        }
+
+        if (!queue.length && nodes.length) {
+          depth.set(nodes[0].id, 0);
+          queue.push(nodes[0].id);
+        }
+
+        while (queue.length) {
+          const current = queue.shift();
+          const currentDepth = depth.get(current);
+          (graph.get(current) || []).forEach((next) => {
+            if (depth.get(next) > currentDepth + 1) {
+              depth.set(next, currentDepth + 1);
+              queue.push(next);
+            }
+          });
+        }
+
+        const finiteDepths = Array.from(depth.values()).filter((d) => Number.isFinite(d));
+        const fallback = finiteDepths.length ? Math.max(...finiteDepths) : 0;
+        nodes.forEach((node) => {
+          if (!Number.isFinite(depth.get(node.id))) depth.set(node.id, fallback);
+        });
+
+        return depth;
+      }
+
+      function initSimulation(width, height, nodes, links, xPositions) {
         if (simulation) simulation.stop();
+
+        const maxDepth = Math.max(...Array.from(xPositions.values()));
+        const xScale = d3
+          .scaleLinear()
+          .domain([0, maxDepth || 1])
+          .range([48, width - 48]);
 
         simulation = d3
           .forceSimulation(nodes)
@@ -677,6 +734,7 @@
               .strength(0.6)
           )
           .force('charge', d3.forceManyBody().strength(-420))
+          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
           .force('center', d3.forceCenter(width / 2, height / 2))
           .force('collision', d3.forceCollide().radius(70));
       }
@@ -777,7 +835,9 @@
         nodeGroup.each(function (d) {
           const group = d3.select(this);
           const isStorage =
-            d.label === 'Dataset' || ['Table', 'ObjectStorage', 'Bucket', 'View', 'File'].includes(d.type);
+            d.label === 'Dataset' ||
+            d.label === 'ExternalSystem' ||
+            ['Table', 'ObjectStorage', 'Bucket', 'View', 'File', 'SaaS'].includes(d.type);
 
           if (isStorage) {
             group
@@ -815,7 +875,8 @@
 
         nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
 
-        initSimulation(width, height, nodes, normalizedEdges);
+        const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
+        initSimulation(width, height, nodes, normalizedEdges, xPositions);
 
         simulation.on('tick', () => {
           link
@@ -901,7 +962,7 @@
       loadGraphBtn.addEventListener('click', loadGraph);
       resetViewBtn.addEventListener('click', () => {
         rootInput.value = 'ingest-oppty';
-        depthInput.value = 2;
+        depthInput.value = 5;
         directionSelect.value = 'both';
         searchInput.value = '';
         renderDetails(null);

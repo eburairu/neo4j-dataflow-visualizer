@@ -18,7 +18,7 @@ async function getGraph({ rootId, depth, direction, snapshot }) {
   `;
 
   try {
-    const result = await session.run(cypher, { rootId, depth: Number(depth) || 2 });
+    const result = await session.run(cypher, { rootId, depth: Number(depth) || 5 });
     const record = result.records[0];
     const nodeList = [...record.get('roots'), ...record.get('nodes')].filter(Boolean);
     const nodes = nodeList.map((node) => ({ id: node.properties.id, labels: node.labels, ...node.properties }));

@@ -4,7 +4,7 @@ const { getGraph, getDiff, listSnapshots } = require('../services/graphService')
 const router = express.Router();
 
 router.get('/graph', async (req, res) => {
-  const { rootId, depth = 2, direction = 'both', snapshot } = req.query;
+  const { rootId, depth = 5, direction = 'both', snapshot } = req.query;
   if (!rootId) {
     return res.status(400).json({ code: 'BAD_REQUEST', message: 'rootId is required' });
   }
