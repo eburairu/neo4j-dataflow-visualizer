@@ -10,7 +10,7 @@ const sampleSnapshots = {
     edges: [
       { id: 'ext-to-ingest', from: 'ext-salesforce', to: 'ingest-oppty', type: 'INGESTS_FROM' },
       { id: 'ingest-to-bronze', from: 'ingest-oppty', to: 'bronze-landing', type: 'WRITES_TO' },
-      { id: 'map-reads-bronze', from: 'mapping-core', to: 'bronze-landing', type: 'READS_FROM' },
+      { id: 'map-reads-bronze', from: 'bronze-landing', to: 'mapping-core', type: 'READS_FROM' },
       { id: 'map-writes-silver', from: 'mapping-core', to: 'silver-core', type: 'WRITES_TO' },
     ],
   },
@@ -28,9 +28,9 @@ const sampleSnapshots = {
     edges: [
       { id: 'ext-to-ingest', from: 'ext-salesforce', to: 'ingest-oppty', type: 'INGESTS_FROM' },
       { id: 'ingest-to-bronze', from: 'ingest-oppty', to: 'bronze-landing', type: 'WRITES_TO' },
-      { id: 'map-reads-bronze', from: 'mapping-core', to: 'bronze-landing', type: 'READS_FROM' },
+      { id: 'map-reads-bronze', from: 'bronze-landing', to: 'mapping-core', type: 'READS_FROM' },
       { id: 'map-writes-silver', from: 'mapping-core', to: 'silver-core', type: 'WRITES_TO' },
-      { id: 'taskflow-reads-silver', from: 'taskflow-gold', to: 'silver-core', type: 'READS_FROM' },
+      { id: 'taskflow-reads-silver', from: 'silver-core', to: 'taskflow-gold', type: 'READS_FROM' },
       { id: 'taskflow-writes-gold', from: 'taskflow-gold', to: 'gold-mart', type: 'WRITES_TO' },
       { id: 'gold-delivers-bi', from: 'gold-mart', to: 'powerbi', type: 'DELIVERS_TO' },
     ],
