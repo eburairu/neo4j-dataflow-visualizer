@@ -420,7 +420,7 @@
           </div>
           <div class="field">
             <label for="rootId">起点ノード ID</label>
-            <input id="rootId" name="rootId" placeholder="例: ingest-oppty" value="ingest-oppty" />
+            <input id="rootId" name="rootId" placeholder="例: gold-mart" value="gold-mart" />
           </div>
           <div class="field">
             <label for="direction">方向</label>
@@ -431,8 +431,8 @@
             </select>
           </div>
           <div class="field">
-            <label for="depth">深さ (1-5)</label>
-            <input id="depth" type="number" min="1" max="5" value="5" />
+            <label for="depth">深さ (1-10)</label>
+            <input id="depth" type="number" min="1" max="10" value="10" />
           </div>
           <div class="field">
             <label for="search">名前でハイライト</label>
@@ -723,6 +723,14 @@
           .domain([0, maxDepth || 1])
           .range([48, width - 48]);
 
+        nodes.forEach((node, idx) => {
+          const depth = xPositions.get(node.id) || 0;
+          node.x = xScale(depth);
+          node.y = height / 2 + ((idx % 6) - 3) * 18;
+          node.vx = 0;
+          node.vy = 0;
+        });
+
         simulation = d3
           .forceSimulation(nodes)
           .force(
@@ -734,7 +742,8 @@
               .strength(0.6)
           )
           .force('charge', d3.forceManyBody().strength(-420))
-          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
+          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(1))
+          .force('y', d3.forceY(height / 2).strength(0.05))
           .force('center', d3.forceCenter(width / 2, height / 2))
           .force('collision', d3.forceCollide().radius(70));
       }
@@ -961,8 +970,8 @@
 
       loadGraphBtn.addEventListener('click', loadGraph);
       resetViewBtn.addEventListener('click', () => {
-        rootInput.value = 'ingest-oppty';
-        depthInput.value = 5;
+        rootInput.value = 'gold-mart';
+        depthInput.value = 10;
         directionSelect.value = 'both';
         searchInput.value = '';
         renderDetails(null);

@@ -75,7 +75,7 @@ function buildAdjacency(edges, direction) {
   return adjacency;
 }
 
-function filterGraphByParams(snapshot, { rootId, depth = 5, direction = 'both' }) {
+function filterGraphByParams(snapshot, { rootId, depth = 10, direction = 'both' }) {
   const dataset = sampleSnapshots[snapshot] || sampleSnapshots['2024-02-01T00:00:00Z'];
   const edges = dataset.edges;
   const nodes = dataset.nodes;
