@@ -18,6 +18,9 @@
         --accent-2: #a855f7;
         --success: #22c55e;
         --warning: #f59e0b;
+        --bronze: #b87333;
+        --silver: #c0c0c0;
+        --gold: #f5c542;
       }
 
       * {
@@ -304,6 +307,56 @@
         color: var(--muted);
       }
 
+      .detail-flyout {
+        position: fixed;
+        right: 20px;
+        bottom: 20px;
+        width: min(360px, calc(100vw - 32px));
+        background: rgba(15, 23, 42, 0.96);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+        padding: 14px;
+        display: none;
+        z-index: 30;
+        backdrop-filter: blur(6px);
+      }
+
+      .detail-flyout.open {
+        display: grid;
+        gap: 10px;
+      }
+
+      .flyout-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .flyout-title {
+        font-weight: 700;
+        font-size: 15px;
+      }
+
+      .icon-button {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+      }
+
+      .icon-button:hover {
+        border-color: rgba(56, 189, 248, 0.4);
+      }
+
       @media (max-width: 1100px) {
         main {
           grid-template-columns: 1fr;
@@ -367,7 +420,7 @@
           </div>
           <div class="field">
             <label for="rootId">起点ノード ID</label>
-            <input id="rootId" name="rootId" placeholder="例: ingest-oppty" value="ingest-oppty" />
+            <input id="rootId" name="rootId" placeholder="例: gold-mart" value="gold-mart" />
           </div>
           <div class="field">
             <label for="direction">方向</label>
@@ -378,8 +431,8 @@
             </select>
           </div>
           <div class="field">
-            <label for="depth">深さ (1-5)</label>
-            <input id="depth" type="number" min="1" max="5" value="2" />
+            <label for="depth">深さ (1-10)</label>
+            <input id="depth" type="number" min="1" max="10" value="10" />
           </div>
           <div class="field">
             <label for="search">名前でハイライト</label>
@@ -394,9 +447,9 @@
 
         <div class="legend" style="margin-top: 14px;">
           <div class="legend-row"><span class="legend-color" style="background:#38bdf8"></span>Pipeline</div>
-          <div class="legend-row"><span class="legend-color" style="background:#22c55e"></span>Dataset (Silver)</div>
-          <div class="legend-row"><span class="legend-color" style="background:#f97316"></span>Dataset (Bronze)</div>
-          <div class="legend-row"><span class="legend-color" style="background:#facc15"></span>Dataset (Gold)</div>
+          <div class="legend-row"><span class="legend-color" style="background:var(--bronze)"></span>Dataset (Bronze)</div>
+          <div class="legend-row"><span class="legend-color" style="background:var(--silver)"></span>Dataset (Silver)</div>
+          <div class="legend-row"><span class="legend-color" style="background:var(--gold)"></span>Dataset (Gold)</div>
           <div class="legend-row"><span class="legend-color" style="background:#c084fc"></span>Schedule / Taskflow</div>
           <div class="legend-row"><span class="legend-color" style="background:#0ea5e9"></span>External / BI</div>
         </div>
@@ -423,7 +476,7 @@
       <section class="panel" aria-label="詳細・差分">
         <h2>ノード詳細</h2>
         <div class="detail-panel" id="details">
-          <div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>
+          <div class="muted-text">ノードをタップすると右下にフローティング詳細が表示されます。</div>
         </div>
 
         <div class="panel" style="margin-top: 16px; background: var(--panel-strong);">
@@ -444,6 +497,16 @@
       </section>
     </main>
 
+    <div id="detailFlyout" class="detail-flyout" aria-live="polite">
+      <div class="flyout-header">
+        <div class="flyout-title">選択した要素</div>
+        <button class="icon-button" id="closeFlyout" aria-label="詳細を閉じる">✕</button>
+      </div>
+      <div class="detail-panel" id="detailContent">
+        <div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>
+      </div>
+    </div>
+
     <script>
       const snapshotSelect = document.getElementById('snapshotSelect');
       const baseSnapshot = document.getElementById('baseSnapshot');
@@ -461,25 +524,50 @@
       const diffOutput = document.getElementById('diffOutput');
       const details = document.getElementById('details');
       const graphContainer = document.getElementById('graph');
+      const detailFlyout = document.getElementById('detailFlyout');
+      const detailContent = document.getElementById('detailContent');
+      const closeFlyout = document.getElementById('closeFlyout');
 
       let currentData = { nodes: [], edges: [] };
       let simulation;
       let svg;
       let zoomLayer;
 
+      const bronzeColor = '#b87333';
+      const silverColor = '#c0c0c0';
+      const goldColor = '#f5c542';
+
       const labelColors = {
         Pipeline: '#38bdf8',
-        Dataset: '#22c55e',
+        Dataset: silverColor,
         ExternalSystem: '#0ea5e9',
         BIApp: '#0ea5e9',
         Schedule: '#c084fc',
       };
 
+      function buildLogo(bg, fg, text) {
+        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><rect rx='12' ry='12' width='64' height='64' fill='${bg}'/><text x='32' y='38' text-anchor='middle' font-family='Inter,Arial, sans-serif' font-size='26' font-weight='700' fill='${fg}'>${text}</text></svg>`;
+        return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+      }
+
+      const productLogos = [
+        { match: /salesforce/i, url: buildLogo('#00a1e0', '#fff', 'SF') },
+        { match: /oracle/i, url: buildLogo('#d31900', '#fff', 'OR') },
+        { match: /idmc|informatica/i, url: buildLogo('#ff6f00', '#0b1220', 'ID') },
+        { match: /power\s*bi/i, url: buildLogo('#f2c811', '#0b1220', 'BI') },
+      ];
+
+      function logoForNode(node) {
+        const target = `${node.name || node.id}`;
+        const found = productLogos.find((p) => p.match.test(target));
+        return found?.url || null;
+      }
+
       function colorForNode(node) {
         if (node.label === 'Dataset') {
-          if (node.layer === 'Bronze') return '#f97316';
-          if (node.layer === 'Gold' || node.type === 'DataMart') return '#facc15';
-          return '#22c55e';
+          if (node.layer === 'Bronze') return bronzeColor;
+          if (node.layer === 'Gold' || node.type === 'DataMart') return goldColor;
+          return silverColor;
         }
         if (node.label === 'Pipeline' && node.type === 'Taskflow') return '#c084fc';
         return labelColors[node.label] || '#94a3b8';
@@ -522,14 +610,18 @@
 
       function renderDetails(item) {
         if (!item) {
-          details.innerHTML = '<div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>';
+          detailContent.innerHTML = '<div class="muted-text">ノードまたはリレーションをタップすると詳細が表示されます。</div>';
+          detailFlyout.classList.remove('open');
+          details.innerHTML = '<div class="muted-text">ノードをタップすると右下にフローティング詳細が表示されます。</div>';
           return;
         }
+
+        let content = '';
 
         if (item.source && item.target) {
           const from = item.source.id || item.source;
           const to = item.target.id || item.target;
-          details.innerHTML = `
+          content = `
             <div class="chips">
               <span class="chip">Relation</span>
               ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
@@ -541,14 +633,12 @@
             </div>
             <div class="pre">${formatJson({ ...item, source: from, target: to })}</div>
           `;
-          return;
-        }
+        } else {
+          const connected = currentData.edges.filter((e) => e.from === item.id || e.to === item.id);
+          const upstream = connected.filter((e) => e.to === item.id).map((e) => e.from);
+          const downstream = connected.filter((e) => e.from === item.id).map((e) => e.to);
 
-        const connected = currentData.edges.filter((e) => e.from === item.id || e.to === item.id);
-        const upstream = connected.filter((e) => e.to === item.id).map((e) => e.from);
-        const downstream = connected.filter((e) => e.from === item.id).map((e) => e.to);
-
-        details.innerHTML = `
+          content = `
           <div class="chips">
             <span class="chip">${item.label}</span>
             ${item.layer ? `<span class="chip">Layer: ${item.layer}</span>` : ''}
@@ -566,11 +656,19 @@
           <div class="pre">${formatJson(item)}</div>
           <button class="secondary" id="useAsRoot">このノードを起点に再探索</button>
         `;
+        }
 
-        document.getElementById('useAsRoot').onclick = () => {
-          rootInput.value = item.id;
-          loadGraph();
-        };
+        detailContent.innerHTML = content;
+        detailFlyout.classList.add('open');
+        details.innerHTML = '<div class="muted-text">フローティング詳細で選択内容を表示しています。</div>';
+
+        const useAsRootBtn = document.getElementById('useAsRoot');
+        if (useAsRootBtn) {
+          useAsRootBtn.onclick = () => {
+            rootInput.value = item.id;
+            loadGraph();
+          };
+        }
       }
 
       function applySearchHighlight(term) {
@@ -581,31 +679,6 @@
           if (!lowered) return false;
           return !(d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered));
         });
-      }
-
-      function initSimulation(width, height, nodes, links, xPositions) {
-        if (simulation) simulation.stop();
-
-        const maxDepth = Math.max(...Array.from(xPositions.values()));
-        const xScale = d3
-          .scaleLinear()
-          .domain([0, maxDepth || 1])
-          .range([48, width - 48]);
-
-        simulation = d3
-          .forceSimulation(nodes)
-          .force(
-            'link',
-            d3
-              .forceLink(links)
-              .id((d) => d.id)
-              .distance(140)
-              .strength(0.6)
-          )
-          .force('charge', d3.forceManyBody().strength(-420))
-          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.7))
-          .force('center', d3.forceCenter(width / 2, height / 2))
-          .force('collision', d3.forceCollide().radius(70));
       }
 
       function computeLeftToRightPositions(nodes, links) {
@@ -659,6 +732,40 @@
         return depth;
       }
 
+      function initSimulation(width, height, nodes, links, xPositions) {
+        if (simulation) simulation.stop();
+
+        const maxDepth = Math.max(...Array.from(xPositions.values()));
+        const xScale = d3
+          .scaleLinear()
+          .domain([0, maxDepth || 1])
+          .range([48, width - 48]);
+
+        nodes.forEach((node, idx) => {
+          const depth = xPositions.get(node.id) || 0;
+          node.x = xScale(depth);
+          node.y = height / 2 + ((idx % 6) - 3) * 18;
+          node.vx = 0;
+          node.vy = 0;
+        });
+
+        simulation = d3
+          .forceSimulation(nodes)
+          .force(
+            'link',
+            d3
+              .forceLink(links)
+              .id((d) => d.id)
+              .distance(140)
+              .strength(0.6)
+          )
+          .force('charge', d3.forceManyBody())
+          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.4))
+          .force('y', d3.forceY(height / 2))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collision', d3.forceCollide().radius(70));
+      }
+
       function renderGraph(data) {
         const nodes = data.nodes || [];
         const nodeIds = new Set(nodes.map((node) => node.id));
@@ -686,6 +793,8 @@
           .attr('width', width)
           .attr('height', height)
           .style('cursor', 'grab');
+
+        svg.on('click', () => renderDetails(null));
 
         const defs = svg.append('defs');
         defs
@@ -747,27 +856,70 @@
             renderDetails(d);
           });
 
-        nodeGroup
-          .append('circle')
-          .attr('r', 18)
-          .attr('fill', (d) => colorForNode(d))
-          .attr('stroke', 'rgba(255,255,255,0.6)')
-          .attr('stroke-width', 1.1)
-          .attr('opacity', 0.9);
+        const rectWidth = 150;
+        const rectHeight = 36;
 
-        nodeGroup
-          .append('text')
-          .attr('x', 22)
-          .attr('y', 5)
-          .text((d) => d.name || d.id)
-          .attr('fill', '#e2e8f0')
-          .attr('font-size', 12)
-          .attr('font-weight', 600);
+        nodeGroup.each(function (d) {
+          const group = d3.select(this);
+          const isStorage =
+            d.label === 'Dataset' ||
+            d.label === 'ExternalSystem' ||
+            ['Table', 'ObjectStorage', 'Bucket', 'View', 'File', 'SaaS'].includes(d.type);
+
+          if (isStorage) {
+            group
+              .append('rect')
+              .attr('x', -rectWidth / 2)
+              .attr('y', -rectHeight / 2)
+              .attr('rx', 8)
+              .attr('ry', 8)
+              .attr('width', rectWidth)
+              .attr('height', rectHeight)
+              .attr('fill', (n) => colorForNode(n))
+              .attr('stroke', 'rgba(255,255,255,0.6)')
+              .attr('stroke-width', 1.1)
+              .attr('opacity', 0.9);
+          } else {
+            group
+              .append('circle')
+              .attr('r', 18)
+              .attr('fill', (n) => colorForNode(n))
+              .attr('stroke', 'rgba(255,255,255,0.6)')
+              .attr('stroke-width', 1.1)
+              .attr('opacity', 0.9);
+          }
+
+          const logo = logoForNode(d);
+          if (logo) {
+            const iconSize = 22;
+            const iconX = isStorage ? -rectWidth / 2 + 10 : -iconSize / 2;
+            const iconY = isStorage ? -rectHeight / 2 + 7 : -iconSize / 2;
+
+            group
+              .append('image')
+              .attr('href', logo)
+              .attr('x', iconX)
+              .attr('y', iconY)
+              .attr('width', iconSize)
+              .attr('height', iconSize);
+          }
+
+          const textAnchor = logo ? 'start' : 'middle';
+          const textX = logo ? (isStorage ? -rectWidth / 2 + 40 : 14) : 0;
+          group
+            .append('text')
+            .attr('x', textX)
+            .attr('y', 5)
+            .attr('text-anchor', textAnchor)
+            .text((n) => n.name || n.id)
+            .attr('fill', '#e2e8f0')
+            .attr('font-size', 12)
+            .attr('font-weight', 600);
+        });
 
         nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
 
         const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
-
         initSimulation(width, height, nodes, normalizedEdges, xPositions);
 
         simulation.on('tick', () => {
@@ -853,8 +1005,8 @@
 
       loadGraphBtn.addEventListener('click', loadGraph);
       resetViewBtn.addEventListener('click', () => {
-        rootInput.value = 'ingest-oppty';
-        depthInput.value = 2;
+        rootInput.value = 'gold-mart';
+        depthInput.value = 10;
         directionSelect.value = 'both';
         searchInput.value = '';
         renderDetails(null);
@@ -862,6 +1014,7 @@
       });
       searchInput.addEventListener('input', (event) => applySearchHighlight(event.target.value));
       diffForm.addEventListener('submit', loadDiff);
+      closeFlyout.addEventListener('click', () => renderDetails(null));
 
       (async function init() {
         await loadSnapshots();
