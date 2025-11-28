@@ -6,12 +6,21 @@ const sampleSnapshots = {
       { id: 'ingest-oppty', label: 'Pipeline', name: 'Opportunity Ingestion', type: 'Ingestion' },
       { id: 'silver-core', label: 'Dataset', name: 'Opportunity Core', layer: 'Silver', type: 'Table' },
       { id: 'mapping-core', label: 'Pipeline', name: 'Opportunity Mapping', type: 'Mapping' },
+      { id: 'ext-marketing', label: 'ExternalSystem', name: 'Marketing Hub', type: 'SaaS' },
+      { id: 'ingest-marketing', label: 'Pipeline', name: 'Marketing Ingestion', type: 'Ingestion' },
+      { id: 'bronze-marketing', label: 'Dataset', name: 'Marketing Landing', layer: 'Bronze', type: 'ObjectStorage' },
+      { id: 'mapping-marketing', label: 'Pipeline', name: 'Marketing Modeling', type: 'Mapping' },
+      { id: 'silver-marketing', label: 'Dataset', name: 'Marketing Core', layer: 'Silver', type: 'Table' },
     ],
     edges: [
       { id: 'ext-to-ingest', from: 'ext-salesforce', to: 'ingest-oppty', type: 'INGESTS_FROM' },
       { id: 'ingest-to-bronze', from: 'ingest-oppty', to: 'bronze-landing', type: 'WRITES_TO' },
-      { id: 'map-reads-bronze', from: 'mapping-core', to: 'bronze-landing', type: 'READS_FROM' },
+      { id: 'map-reads-bronze', from: 'bronze-landing', to: 'mapping-core', type: 'READS_FROM' },
       { id: 'map-writes-silver', from: 'mapping-core', to: 'silver-core', type: 'WRITES_TO' },
+      { id: 'ext-marketing-to-ingest', from: 'ext-marketing', to: 'ingest-marketing', type: 'INGESTS_FROM' },
+      { id: 'ingest-marketing-to-bronze', from: 'ingest-marketing', to: 'bronze-marketing', type: 'WRITES_TO' },
+      { id: 'map-marketing-reads', from: 'bronze-marketing', to: 'mapping-marketing', type: 'READS_FROM' },
+      { id: 'map-marketing-writes', from: 'mapping-marketing', to: 'silver-marketing', type: 'WRITES_TO' },
     ],
   },
   '2024-02-01T00:00:00Z': {
@@ -24,13 +33,23 @@ const sampleSnapshots = {
       { id: 'gold-mart', label: 'Dataset', name: 'Opportunity Gold Mart', layer: 'Gold', type: 'DataMart' },
       { id: 'taskflow-gold', label: 'Pipeline', name: 'Gold Builder', type: 'Taskflow' },
       { id: 'powerbi', label: 'BIApp', name: 'Power BI', type: 'PowerBI' },
+      { id: 'ext-marketing', label: 'ExternalSystem', name: 'Marketing Hub', type: 'SaaS' },
+      { id: 'ingest-marketing', label: 'Pipeline', name: 'Marketing Ingestion', type: 'Ingestion' },
+      { id: 'bronze-marketing', label: 'Dataset', name: 'Marketing Landing', layer: 'Bronze', type: 'ObjectStorage' },
+      { id: 'mapping-marketing', label: 'Pipeline', name: 'Marketing Modeling', type: 'Mapping' },
+      { id: 'silver-marketing', label: 'Dataset', name: 'Marketing Core', layer: 'Silver', type: 'Table' },
     ],
     edges: [
       { id: 'ext-to-ingest', from: 'ext-salesforce', to: 'ingest-oppty', type: 'INGESTS_FROM' },
       { id: 'ingest-to-bronze', from: 'ingest-oppty', to: 'bronze-landing', type: 'WRITES_TO' },
-      { id: 'map-reads-bronze', from: 'mapping-core', to: 'bronze-landing', type: 'READS_FROM' },
+      { id: 'map-reads-bronze', from: 'bronze-landing', to: 'mapping-core', type: 'READS_FROM' },
       { id: 'map-writes-silver', from: 'mapping-core', to: 'silver-core', type: 'WRITES_TO' },
-      { id: 'taskflow-reads-silver', from: 'taskflow-gold', to: 'silver-core', type: 'READS_FROM' },
+      { id: 'ext-marketing-to-ingest', from: 'ext-marketing', to: 'ingest-marketing', type: 'INGESTS_FROM' },
+      { id: 'ingest-marketing-to-bronze', from: 'ingest-marketing', to: 'bronze-marketing', type: 'WRITES_TO' },
+      { id: 'map-marketing-reads', from: 'bronze-marketing', to: 'mapping-marketing', type: 'READS_FROM' },
+      { id: 'map-marketing-writes', from: 'mapping-marketing', to: 'silver-marketing', type: 'WRITES_TO' },
+      { id: 'taskflow-reads-silver', from: 'silver-core', to: 'taskflow-gold', type: 'READS_FROM' },
+      { id: 'taskflow-reads-marketing', from: 'silver-marketing', to: 'taskflow-gold', type: 'READS_FROM' },
       { id: 'taskflow-writes-gold', from: 'taskflow-gold', to: 'gold-mart', type: 'WRITES_TO' },
       { id: 'gold-delivers-bi', from: 'gold-mart', to: 'powerbi', type: 'DELIVERS_TO' },
     ],
@@ -56,7 +75,7 @@ function buildAdjacency(edges, direction) {
   return adjacency;
 }
 
-function filterGraphByParams(snapshot, { rootId, depth = 2, direction = 'both' }) {
+function filterGraphByParams(snapshot, { rootId, depth = 10, direction = 'both' }) {
   const dataset = sampleSnapshots[snapshot] || sampleSnapshots['2024-02-01T00:00:00Z'];
   const edges = dataset.edges;
   const nodes = dataset.nodes;
