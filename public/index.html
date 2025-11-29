@@ -541,6 +541,7 @@
       let suggestionLookup = new Map();
       let latestSearchResults = { nodes: [], edges: [] };
       let searchDebounce;
+      let nodeDragged = false;
 
       const bronzeColor = '#b87333';
       const silverColor = '#c0c0c0';
@@ -998,11 +999,13 @@
             d3
               .drag()
               .on('start', (event, d) => {
+                nodeDragged = false;
                 if (!event.active) simulation.alphaTarget(0.3).restart();
                 d.fx = d.x;
                 d.fy = d.y;
               })
               .on('drag', (event, d) => {
+                nodeDragged = true;
                 d.fx = event.x;
                 d.fy = event.y;
               })
@@ -1010,9 +1013,13 @@
                 if (!event.active) simulation.alphaTarget(0);
                 d.fx = null;
                 d.fy = null;
+                setTimeout(() => {
+                  nodeDragged = false;
+                }, 0);
               })
           )
-          .on('click pointerdown', (event, d) => {
+          .on('click', (event, d) => {
+            if (nodeDragged) return;
             event.stopPropagation();
             renderDetails(d);
           });
