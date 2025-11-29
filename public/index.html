@@ -550,16 +550,33 @@
         return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
       }
 
+      const oracleLogo = buildLogo('#d31900', '#fff', 'OR');
+
       const productLogos = [
-        { match: /salesforce/i, url: buildLogo('#00a1e0', '#fff', 'SF') },
-        { match: /oracle/i, url: buildLogo('#d31900', '#fff', 'OR') },
-        { match: /idmc|informatica/i, url: buildLogo('#ff6f00', '#0b1220', 'ID') },
-        { match: /power\s*bi/i, url: buildLogo('#f2c811', '#0b1220', 'BI') },
+        {
+          match: (node, target) => node.type === 'Tableau' || /tableau/i.test(target),
+          url: buildLogo('#e97627', '#fff', 'Tb'),
+        },
+        {
+          match: (node, target) => node.type === 'ObjectStorage' && /oci|oracle cloud infrastructure/i.test(target),
+          url: oracleLogo,
+        },
+        {
+          match: (node, target) => node.type === 'Table' && /(adw|autonomous data warehouse)/i.test(target),
+          url: oracleLogo,
+        },
+        {
+          match: (node, target) => /oracle/i.test(target),
+          url: oracleLogo,
+        },
+        { match: (_node, target) => /salesforce/i.test(target), url: buildLogo('#00a1e0', '#fff', 'SF') },
+        { match: (_node, target) => /idmc|informatica/i.test(target), url: buildLogo('#ff6f00', '#0b1220', 'ID') },
+        { match: (_node, target) => /power\s*bi/i.test(target), url: buildLogo('#f2c811', '#0b1220', 'BI') },
       ];
 
       function logoForNode(node) {
         const target = `${node.name || node.id}`;
-        const found = productLogos.find((p) => p.match.test(target));
+        const found = productLogos.find((p) => p.match(node, target));
         return found?.url || null;
       }
 
