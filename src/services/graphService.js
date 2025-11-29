@@ -1,5 +1,5 @@
 const { getSession } = require('../neo4j/driver');
-const { filterGraphByParams, diffSnapshots, sampleSnapshots } = require('../data/sampleGraph');
+const { filterGraphByParams, diffSnapshots, sampleSnapshots, searchSnapshot } = require('../data/sampleGraph');
 const config = require('../config');
 
 async function getGraph({ rootId, depth, direction, snapshot }) {
@@ -43,6 +43,88 @@ async function getGraph({ rootId, depth, direction, snapshot }) {
   } catch (error) {
     console.error('Neo4j query failed, falling back to sample data:', error.message);
     return filterGraphByParams(effectiveSnapshot, { rootId, depth, direction });
+  } finally {
+    if (session) await session.close();
+  }
+}
+
+async function getFullGraph(snapshot) {
+  const session = getSession();
+  const effectiveSnapshot = snapshot || config.sampleSnapshot;
+
+  if (!session) {
+    return sampleSnapshots[effectiveSnapshot] || sampleSnapshots[config.sampleSnapshot];
+  }
+
+  const cypher = `
+    MATCH (n)
+    WHERE $snapshot IS NULL OR n.snapshot_at = $snapshot
+    OPTIONAL MATCH (n)-[r]->(m)
+    RETURN collect(distinct { id: n.id, labels: labels(n), props: n }) as nodes,
+           collect(distinct {
+             id: coalesce(r.id, startNode(r).id + '-' + type(r) + '-' + endNode(r).id),
+             from: startNode(r).id,
+             to: endNode(r).id,
+             type: type(r),
+             properties: r
+           }) as relationships
+  `;
+
+  try {
+    const result = await session.run(cypher, { snapshot: snapshot || null });
+    const record = result.records[0];
+    const nodes = record.get('nodes').map((node) => ({ id: node.id, labels: node.labels, ...node.props }));
+    const edges = record.get('relationships').map((rel) => ({
+      id: rel.id,
+      from: rel.from,
+      to: rel.to,
+      type: rel.type,
+      properties: rel.properties,
+    }));
+    return { nodes, edges };
+  } catch (error) {
+    console.error('Full graph query failed, falling back to sample data:', error.message);
+    return sampleSnapshots[effectiveSnapshot] || sampleSnapshots[config.sampleSnapshot];
+  } finally {
+    if (session) await session.close();
+  }
+}
+
+async function searchEntities({ term, snapshot }) {
+  const session = getSession();
+  const effectiveSnapshot = snapshot || config.sampleSnapshot;
+
+  if (!session) {
+    return searchSnapshot(effectiveSnapshot, term);
+  }
+
+  const lowered = term.toLowerCase();
+  const cypher = `
+    MATCH (n)
+    WHERE ($snapshot IS NULL OR n.snapshot_at = $snapshot)
+      AND (toLower(n.id) CONTAINS $term OR toLower(coalesce(n.name, '')) CONTAINS $term)
+    WITH collect(distinct { id: n.id, label: labels(n)[0], name: n.name, type: n.type, layer: n.layer, properties: n }) as nodes
+    OPTIONAL MATCH (a)-[r]->(b)
+    WHERE ($snapshot IS NULL OR r.snapshot_at = $snapshot)
+      AND (toLower(r.type) CONTAINS $term OR toLower(coalesce(r.name, '')) CONTAINS $term)
+    RETURN nodes, collect(distinct {
+      id: coalesce(r.id, a.id + '-' + r.type + '-' + b.id),
+      type: r.type,
+      from: a.id,
+      to: b.id,
+      properties: r
+    }) as edges
+  `;
+
+  try {
+    const result = await session.run(cypher, { snapshot: snapshot || null, term: lowered });
+    const record = result.records[0];
+    const nodes = record.get('nodes') || [];
+    const edges = record.get('edges') || [];
+    return { nodes, edges };
+  } catch (error) {
+    console.error('Search query failed, falling back to sample data:', error.message);
+    return searchSnapshot(effectiveSnapshot, term);
   } finally {
     if (session) await session.close();
   }
@@ -98,4 +180,4 @@ function listSnapshots() {
   return Object.keys(sampleSnapshots);
 }
 
-module.exports = { getGraph, getDiff, listSnapshots };
+module.exports = { getGraph, getFullGraph, getDiff, listSnapshots, searchEntities };

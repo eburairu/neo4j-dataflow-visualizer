@@ -436,10 +436,13 @@
           </div>
           <div class="field">
             <label for="search">名前でハイライト</label>
-            <input id="search" type="search" placeholder="例: Gold" />
+            <input id="search" type="search" placeholder="例: Gold" list="searchSuggestions" autocomplete="off" />
+            <datalist id="searchSuggestions"></datalist>
+            <div class="muted-text" id="searchResults">検索キーワードを2文字以上入力すると候補を表示します。</div>
           </div>
           <div class="row">
             <button id="loadGraph">グラフを取得</button>
+            <button id="loadAllGraph" type="button" class="secondary">全体を表示</button>
             <button class="secondary" id="resetView" type="button">リセット</button>
           </div>
           <div class="health" id="healthStatus"><span class="dot"></span> API ステータスを確認中...</div>
@@ -516,6 +519,7 @@
       const directionSelect = document.getElementById('direction');
       const searchInput = document.getElementById('search');
       const loadGraphBtn = document.getElementById('loadGraph');
+      const loadAllGraphBtn = document.getElementById('loadAllGraph');
       const resetViewBtn = document.getElementById('resetView');
       const healthStatus = document.getElementById('healthStatus');
       const graphSummary = document.getElementById('graphSummary');
@@ -527,11 +531,17 @@
       const detailFlyout = document.getElementById('detailFlyout');
       const detailContent = document.getElementById('detailContent');
       const closeFlyout = document.getElementById('closeFlyout');
+      const searchResults = document.getElementById('searchResults');
+      const searchSuggestions = document.getElementById('searchSuggestions');
 
       let currentData = { nodes: [], edges: [] };
       let simulation;
       let svg;
       let zoomLayer;
+      let suggestionLookup = new Map();
+      let latestSearchResults = { nodes: [], edges: [] };
+      let searchDebounce;
+      let nodeDragged = false;
 
       const bronzeColor = '#b87333';
       const silverColor = '#c0c0c0';
@@ -698,6 +708,141 @@
         });
       }
 
+      function updateSuggestionList(results) {
+        suggestionLookup = new Map();
+        searchSuggestions.innerHTML = '';
+
+        results.nodes.forEach((node) => {
+          const option = document.createElement('option');
+          option.value = node.id;
+          option.label = `ノード: ${node.name || node.id} (${node.type || node.label || 'node'})`;
+          searchSuggestions.appendChild(option);
+          suggestionLookup.set(node.id, { kind: 'node', item: node });
+        });
+
+        results.edges.forEach((edge) => {
+          const option = document.createElement('option');
+          option.value = edge.id;
+          option.label = `リレーション: ${edge.type} (${edge.from} -> ${edge.to})`;
+          searchSuggestions.appendChild(option);
+          suggestionLookup.set(edge.id, { kind: 'edge', item: edge });
+        });
+      }
+
+      function renderSearchResults(results, term) {
+        latestSearchResults = results;
+        if (!term.trim()) {
+          searchResults.textContent = '検索キーワードを入力してください。';
+          return;
+        }
+
+        if (!results.nodes.length && !results.edges.length) {
+          searchResults.textContent = '一致するノードやリレーションがありません。';
+          return;
+        }
+
+        const nodeCards = results.nodes
+          .map(
+            (node) => `
+              <div class="stat-card" data-node-id="${node.id}" style="margin-top: 8px;">
+                <div class="section-title">${node.name || node.id}</div>
+                <div class="muted-text">${node.label || node.type || 'Node'} / ${node.id}</div>
+                <div class="row">
+                  <button class="secondary" data-action="highlight-node" data-node-id="${node.id}">ハイライト</button>
+                  <button class="secondary" data-action="use-root" data-node-id="${node.id}">起点にする</button>
+                </div>
+              </div>
+            `
+          )
+          .join('');
+
+        const edgeCards = results.edges
+          .map(
+            (edge) => `
+              <div class="stat-card" data-edge-id="${edge.id}" style="margin-top: 8px;">
+                <div class="section-title">${edge.type}</div>
+                <div class="muted-text">${edge.from} → ${edge.to}</div>
+                <div class="row">
+                  <button class="secondary" data-action="highlight-edge" data-edge-id="${edge.id}">詳細</button>
+                </div>
+              </div>
+            `
+          )
+          .join('');
+
+        searchResults.innerHTML = `
+          <div class="muted-text">候補: ノード ${results.nodes.length} 件 / リレーション ${results.edges.length} 件</div>
+          ${nodeCards}
+          ${edgeCards}
+        `;
+
+        searchResults.querySelectorAll('[data-action="highlight-node"]').forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            const id = event.currentTarget.dataset.nodeId;
+            searchInput.value = id;
+            applySearchHighlight(id);
+            const node = results.nodes.find((n) => n.id === id);
+            if (node) renderDetails(node);
+          });
+        });
+
+        searchResults.querySelectorAll('[data-action="use-root"]').forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            const id = event.currentTarget.dataset.nodeId;
+            rootInput.value = id;
+            loadGraph();
+          });
+        });
+
+        searchResults.querySelectorAll('[data-action="highlight-edge"]').forEach((btn) => {
+          btn.addEventListener('click', (event) => {
+            const id = event.currentTarget.dataset.edgeId;
+            const edge = results.edges.find((e) => e.id === id);
+            if (edge) {
+              renderDetails({ id: edge.id, type: edge.type, source: { id: edge.from }, target: { id: edge.to }, properties: edge.properties || {} });
+            }
+          });
+        });
+      }
+
+      async function fetchSearchSuggestions(term) {
+        const trimmed = term.trim();
+        if (trimmed.length < 2) {
+          searchResults.textContent = '検索キーワードを2文字以上入力すると候補を表示します。';
+          searchSuggestions.innerHTML = '';
+          return;
+        }
+
+        try {
+          const params = new URLSearchParams({ term: trimmed, snapshot: snapshotSelect.value });
+          const results = await fetchJson(`/api/search?${params.toString()}`);
+          updateSuggestionList(results);
+          renderSearchResults(results, term);
+        } catch (error) {
+          searchResults.textContent = `検索に失敗しました: ${error.message}`;
+        }
+      }
+
+      function handleSearchSelection(value) {
+        const suggestion = suggestionLookup.get(value);
+        if (!suggestion) return;
+
+        if (suggestion.kind === 'node') {
+          searchInput.value = suggestion.item.id;
+          applySearchHighlight(suggestion.item.id);
+          renderDetails(suggestion.item);
+        } else if (suggestion.kind === 'edge') {
+          searchInput.value = suggestion.item.id;
+          renderDetails({
+            id: suggestion.item.id,
+            type: suggestion.item.type,
+            source: { id: suggestion.item.from },
+            target: { id: suggestion.item.to },
+            properties: suggestion.item.properties || {},
+          });
+        }
+      }
+
       function computeLeftToRightPositions(nodes, links) {
         const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
         const indegree = new Map(nodes.map((n) => [n.id, 0]));
@@ -854,11 +999,13 @@
             d3
               .drag()
               .on('start', (event, d) => {
+                nodeDragged = false;
                 if (!event.active) simulation.alphaTarget(0.3).restart();
                 d.fx = d.x;
                 d.fy = d.y;
               })
               .on('drag', (event, d) => {
+                nodeDragged = true;
                 d.fx = event.x;
                 d.fy = event.y;
               })
@@ -866,9 +1013,13 @@
                 if (!event.active) simulation.alphaTarget(0);
                 d.fx = null;
                 d.fy = null;
+                setTimeout(() => {
+                  nodeDragged = false;
+                }, 0);
               })
           )
-          .on('click pointerdown', (event, d) => {
+          .on('click', (event, d) => {
+            if (nodeDragged) return;
             event.stopPropagation();
             renderDetails(d);
           });
@@ -999,6 +1150,22 @@
         }
       }
 
+      async function loadAllGraph() {
+        const params = new URLSearchParams();
+        if (snapshotSelect.value) params.set('snapshot', snapshotSelect.value);
+        graphSummary.textContent = '全体のグラフをロード中...';
+        lastUpdated.textContent = '';
+        try {
+          const query = params.toString();
+          const url = query ? `/api/graph/all?${query}` : '/api/graph/all';
+          const data = await fetchJson(url);
+          renderGraph(data);
+          lastUpdated.textContent = `full graph loaded ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value}`;
+        } catch (error) {
+          graphSummary.textContent = `エラー: ${error.message}`;
+        }
+      }
+
       async function loadHealth() {
         try {
           const data = await fetchJson('/api/health');
@@ -1021,6 +1188,7 @@
       }
 
       loadGraphBtn.addEventListener('click', loadGraph);
+      loadAllGraphBtn.addEventListener('click', loadAllGraph);
       resetViewBtn.addEventListener('click', () => {
         rootInput.value = 'gold-mart';
         depthInput.value = 10;
@@ -1028,8 +1196,16 @@
         searchInput.value = '';
         renderDetails(null);
         applySearchHighlight('');
+        searchResults.textContent = '検索キーワードを2文字以上入力すると候補を表示します。';
+        searchSuggestions.innerHTML = '';
       });
-      searchInput.addEventListener('input', (event) => applySearchHighlight(event.target.value));
+      searchInput.addEventListener('input', (event) => {
+        const value = event.target.value;
+        applySearchHighlight(value);
+        clearTimeout(searchDebounce);
+        searchDebounce = setTimeout(() => fetchSearchSuggestions(value), 250);
+      });
+      searchInput.addEventListener('change', (event) => handleSearchSelection(event.target.value));
       diffForm.addEventListener('submit', loadDiff);
       closeFlyout.addEventListener('click', () => renderDetails(null));
 

@@ -168,4 +168,28 @@ function diffSnapshots(base, target) {
   };
 }
 
-module.exports = { sampleSnapshots, filterGraphByParams, diffSnapshots };
+function searchSnapshot(snapshot, term) {
+  const lowered = term.trim().toLowerCase();
+  const dataset = sampleSnapshots[snapshot] || sampleSnapshots['2024-02-01T00:00:00Z'];
+
+  if (!lowered) {
+    return { nodes: [], edges: [] };
+  }
+
+  const nodeMatches = dataset.nodes.filter((node) => {
+    return (
+      node.id.toLowerCase().includes(lowered) ||
+      (node.name || '').toLowerCase().includes(lowered) ||
+      (node.type || '').toLowerCase().includes(lowered) ||
+      (node.label || '').toLowerCase().includes(lowered)
+    );
+  });
+
+  const edgeMatches = dataset.edges.filter((edge) => {
+    return edge.type.toLowerCase().includes(lowered) || edge.id.toLowerCase().includes(lowered);
+  });
+
+  return { nodes: nodeMatches.slice(0, 10), edges: edgeMatches.slice(0, 10) };
+}
+
+module.exports = { sampleSnapshots, filterGraphByParams, diffSnapshots, searchSnapshot };
