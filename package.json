@@ -4,7 +4,7 @@
   "description": "This repository contains planning artifacts for a Neo4j-based application that visualizes dependencies between Informatica IDMC CDI pipelines.",
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js",
+    "start": "npm run build && node src/server.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
