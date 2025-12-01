@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -7,10 +8,14 @@ const config = require('./config');
 
 const app = express();
 
+const distPath = path.join(__dirname, '..', 'dist');
+const publicPath = path.join(__dirname, '..', 'public');
+const staticPath = fs.existsSync(distPath) ? distPath : publicPath;
+
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(staticPath));
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'IDMC CDI dependency graph service running' });
@@ -19,7 +24,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api', graphRoutes);
 
 app.get('/', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  res.sendFile(path.join(staticPath, 'index.html'));
 });
 
 app.use((req, res) => {
