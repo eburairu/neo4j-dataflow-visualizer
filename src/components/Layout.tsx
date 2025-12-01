@@ -5,9 +5,9 @@ export function Page({ children }: PropsWithChildren) {
     <div className="page">
       <header className="page__header">
         <div>
-          <p className="eyebrow">Neo4j data lineage</p>
-          <h1>Dataflow Visualizer</h1>
-          <p className="muted">Explore pipeline dependencies and compare snapshots.</p>
+          <p className="eyebrow">Neo4j データリネージ</p>
+          <h1>データフロー可視化ツール</h1>
+          <p className="muted">パイプラインの依存関係をたどり、スナップショット同士を比較できます。</p>
         </div>
       </header>
       <main className="page__main">{children}</main>

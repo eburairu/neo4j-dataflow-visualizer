@@ -17,8 +17,16 @@ export async function fetchGraph(params: GraphQueryParams): Promise<GraphRespons
   if (params.direction) query.set('direction', params.direction);
   if (params.snapshot) query.set('snapshot', params.snapshot);
 
+  const queryString = query.toString();
+
+  if (!params.rootId) {
+    return handleResponse<GraphResponse>(
+      fetch(`${BASE_URL}/graph/all${queryString ? `?${queryString}` : ''}`),
+    );
+  }
+
   return handleResponse<GraphResponse>(
-    fetch(`${BASE_URL}/graph${query.toString() ? `?${query.toString()}` : ''}`),
+    fetch(`${BASE_URL}/graph${queryString ? `?${queryString}` : ''}`),
   );
 }
 

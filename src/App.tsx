@@ -8,23 +8,32 @@ import { DiffPlaceholder } from './components/DiffPlaceholder';
 import './styles.css';
 
 function App() {
-  const [graphParams, setGraphParams] = useState<GraphQueryParams>({});
+  const defaultSnapshot = '2024-02-01T00:00:00Z';
+  const [graphParams, setGraphParams] = useState<GraphQueryParams>({ snapshot: defaultSnapshot });
   const { data: graph, loading: graphLoading, error: graphError } = useGraphQuery(graphParams);
 
-  const [baseSnapshot, setBaseSnapshot] = useState('');
-  const [targetSnapshot, setTargetSnapshot] = useState('');
-  const [diffParams, setDiffParams] = useState<DiffQueryParams | null>(null);
+  const [baseSnapshot, setBaseSnapshot] = useState(defaultSnapshot);
+  const [targetSnapshot, setTargetSnapshot] = useState('2024-03-01T00:00:00Z');
+  const [diffParams, setDiffParams] = useState<DiffQueryParams | null>({
+    base: defaultSnapshot,
+    target: '2024-03-01T00:00:00Z',
+    includeEdges: true,
+  });
 
   const { data: diff, loading: diffLoading, error: diffError } = useDiffQuery(diffParams);
 
   return (
     <Page>
       <div className="grid">
-        <Panel title="Search graph">
-          <SearchForm onSubmit={(params) => setGraphParams(params)} />
+        <Panel title="グラフ検索">
+          <SearchForm
+            onSubmit={(params) =>
+              setGraphParams({ ...params, snapshot: graphParams.snapshot ?? defaultSnapshot })
+            }
+          />
         </Panel>
 
-        <Panel title="Graph overview">
+        <Panel title="グラフ概要">
           <GraphList
             nodes={graph?.nodes ?? []}
             edges={graph?.edges ?? []}
@@ -34,23 +43,23 @@ function App() {
         </Panel>
       </div>
 
-      <Panel title="Diff explorer">
+      <Panel title="差分ビュー">
         <form className="form diff-form" onSubmit={(e) => e.preventDefault()}>
           <label className="form__field">
-            <span>Base snapshot</span>
+            <span>基準スナップショット</span>
             <input
               type="text"
-              placeholder="e.g. snapshot-2024-01"
+              placeholder="例: 2024-02-01T00:00:00Z"
               value={baseSnapshot}
               onChange={(e) => setBaseSnapshot(e.target.value)}
             />
           </label>
 
           <label className="form__field">
-            <span>Target snapshot</span>
+            <span>比較先スナップショット</span>
             <input
               type="text"
-              placeholder="e.g. snapshot-2024-02"
+              placeholder="例: 2024-03-01T00:00:00Z"
               value={targetSnapshot}
               onChange={(e) => setTargetSnapshot(e.target.value)}
             />
@@ -67,7 +76,7 @@ function App() {
             }
             disabled={!baseSnapshot || !targetSnapshot}
           >
-            Compare snapshots
+            スナップショットを比較
           </button>
         </form>
 

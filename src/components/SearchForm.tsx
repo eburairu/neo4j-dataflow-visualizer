@@ -19,30 +19,30 @@ export function SearchForm({ onSubmit }: SearchFormProps) {
   return (
     <form className="form" onSubmit={handleSubmit}>
       <label className="form__field">
-        <span>Root node</span>
+        <span>起点ノード</span>
         <input
           type="text"
-          placeholder="Enter pipeline ID"
+          placeholder="例: ingest-oppty"
           value={rootId}
           onChange={(e) => setRootId(e.target.value)}
         />
       </label>
 
       <label className="form__field">
-        <span>Depth</span>
+        <span>深さ</span>
         <input type="number" min={1} max={10} value={depth} onChange={(e) => setDepth(Number(e.target.value))} />
       </label>
 
       <label className="form__field">
-        <span>Direction</span>
+        <span>方向</span>
         <select value={direction} onChange={(e) => setDirection(e.target.value as Direction)}>
-          <option value="both">Both directions</option>
-          <option value="incoming">Incoming only</option>
-          <option value="outgoing">Outgoing only</option>
+          <option value="both">両方向</option>
+          <option value="up">上流のみ</option>
+          <option value="down">下流のみ</option>
         </select>
       </label>
 
-      <button type="submit">Fetch graph</button>
+      <button type="submit">グラフを取得</button>
     </form>
   );
 }
