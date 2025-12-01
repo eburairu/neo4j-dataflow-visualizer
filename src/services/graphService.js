@@ -142,44 +142,102 @@ async function searchEntities({ term, snapshot }) {
   });
 }
 
-async function getDiff(baseSnapshot, targetSnapshot) {
+const buildDiffResult = ({ baseNodes, targetNodes, baseEdges, targetEdges, includeEdges }) => {
+  const baseNodeIds = new Set(baseNodes.map((node) => node.id));
+  const targetNodeIds = new Set(targetNodes.map((node) => node.id));
+
+  const baseEdgeIds = new Set(baseEdges.map((edge) => edge.id));
+  const targetEdgeIds = new Set(targetEdges.map((edge) => edge.id));
+
+  return {
+    nodes: {
+      added: targetNodes.filter((node) => !baseNodeIds.has(node.id)),
+      removed: baseNodes.filter((node) => !targetNodeIds.has(node.id)),
+    },
+    edges: includeEdges
+      ? {
+          added: targetEdges.filter((edge) => !baseEdgeIds.has(edge.id)),
+          removed: baseEdges.filter((edge) => !targetEdgeIds.has(edge.id)),
+        }
+      : { added: [], removed: [] },
+  };
+};
+
+const normalizeRelationship = (rel) => ({
+  id: rel.id,
+  from: rel.from,
+  to: rel.to,
+  type: rel.type,
+  properties: rel.properties,
+});
+
+async function getDiff({ baseSnapshot, targetSnapshot, includeEdges = true }) {
   if (baseSnapshot === targetSnapshot) {
-    return { addedNodes: [], removedNodes: [], addedEdges: [], removedEdges: [] };
+    return { nodes: { added: [], removed: [] }, edges: { added: [], removed: [] } };
   }
 
-  const fallback = () => diffSnapshots(baseSnapshot, targetSnapshot);
+  const fallback = () => {
+    const snapshotDiff = diffSnapshots(baseSnapshot, targetSnapshot);
+    return {
+      nodes: snapshotDiff.nodes,
+      edges: includeEdges ? snapshotDiff.edges : { added: [], removed: [] },
+    };
+  };
 
   return withNeo4jFallback({
     fallback,
     errorMessage: 'Diff query failed, falling back to sample data',
     query: async (session) => {
-      const cypher = `
+      const nodeQuery = `
         MATCH (n)
         WHERE n.snapshot_at IN [$base, $target]
-        WITH n.snapshot_at AS snap, collect(n) AS nodes
-        UNWIND nodes AS node
-        RETURN snap, collect(DISTINCT {id: node.id, labels: labels(node), props: node}) AS nodes
+        WITH n.snapshot_at AS snap, collect(DISTINCT {id: n.id, labels: labels(n), props: n}) AS nodes
+        RETURN snap, nodes
       `;
 
-      const result = await session.run(cypher, { base: baseSnapshot, target: targetSnapshot });
-      const snapshotMap = new Map();
-      result.records.forEach((record) => {
-        snapshotMap.set(record.get('snap'), record.get('nodes'));
+      const nodeResult = await session.run(nodeQuery, { base: baseSnapshot, target: targetSnapshot });
+      const nodeMap = new Map();
+      nodeResult.records.forEach((record) => {
+        nodeMap.set(
+          record.get('snap'),
+          (record.get('nodes') || []).map((node) => normalizeNode(node))
+        );
       });
 
-      const baseNodes = snapshotMap.get(baseSnapshot) || [];
-      const targetNodes = snapshotMap.get(targetSnapshot) || [];
+      const baseNodes = nodeMap.get(baseSnapshot) || [];
+      const targetNodes = nodeMap.get(targetSnapshot) || [];
 
-      const baseNodeIds = new Set(baseNodes.map((node) => node.id));
-      const targetNodeIds = new Set(targetNodes.map((node) => node.id));
+      let baseEdges = [];
+      let targetEdges = [];
 
-      return {
-        addedNodes: targetNodes.filter((node) => !baseNodeIds.has(node.id)),
-        removedNodes: baseNodes.filter((node) => !targetNodeIds.has(node.id)),
-        // Edge-level diff would require relationship snapshots; omitted for brevity in this draft.
-        addedEdges: [],
-        removedEdges: [],
-      };
+      if (includeEdges) {
+        const edgeQuery = `
+          MATCH (a)-[r]->(b)
+          WHERE r.snapshot_at IN [$base, $target]
+          WITH r.snapshot_at AS snap, collect(DISTINCT {
+            id: coalesce(r.id, a.id + '-' + type(r) + '-' + b.id),
+            from: a.id,
+            to: b.id,
+            type: type(r),
+            properties: r
+          }) AS edges
+          RETURN snap, edges
+        `;
+
+        const edgeResult = await session.run(edgeQuery, { base: baseSnapshot, target: targetSnapshot });
+        const edgeMap = new Map();
+        edgeResult.records.forEach((record) => {
+          edgeMap.set(
+            record.get('snap'),
+            (record.get('edges') || []).map((rel) => normalizeRelationship(rel))
+          );
+        });
+
+        baseEdges = edgeMap.get(baseSnapshot) || [];
+        targetEdges = edgeMap.get(targetSnapshot) || [];
+      }
+
+      return buildDiffResult({ baseNodes, targetNodes, baseEdges, targetEdges, includeEdges });
     },
   });
 }

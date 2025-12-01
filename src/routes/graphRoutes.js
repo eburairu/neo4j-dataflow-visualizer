@@ -31,14 +31,31 @@ router.get('/graph/all', async (req, res) => {
 });
 
 router.get('/diff', async (req, res) => {
-  const { base, target } = req.query;
+  const { base, target, includeEdges } = req.query;
   if (!base || !target) {
     return res.status(400).json({ code: 'BAD_REQUEST', message: 'base and target snapshots are required' });
   }
 
+  const parseBoolean = (value, defaultValue) => {
+    if (value === undefined) return defaultValue;
+    if (typeof value === 'boolean') return value;
+    const lowered = value.toString().toLowerCase();
+    if (['true', '1', 'yes', 'y'].includes(lowered)) return true;
+    if (['false', '0', 'no', 'n'].includes(lowered)) return false;
+    return null;
+  };
+
+  const includeEdgesFlag = parseBoolean(includeEdges, true);
+  if (includeEdgesFlag === null) {
+    return res.status(400).json({
+      code: 'BAD_REQUEST',
+      message: 'includeEdges must be a boolean-like value (true/false)',
+    });
+  }
+
   try {
-    const diff = await getDiff(base, target);
-    res.json(diff);
+    const diff = await getDiff({ baseSnapshot: base, targetSnapshot: target, includeEdges: includeEdgesFlag });
+    res.json({ nodes: diff.nodes, edges: diff.edges });
   } catch (error) {
     console.error(error);
     res.status(500).json({ code: 'INTERNAL_ERROR', message: 'Failed to compute diff', details: error.message });
