@@ -161,10 +161,14 @@ function diffSnapshots(base, target) {
   const targetEdgeIds = new Set(targetData.edges.map((e) => e.id));
 
   return {
-    addedNodes: targetData.nodes.filter((node) => !baseNodeIds.has(node.id)),
-    removedNodes: baseData.nodes.filter((node) => !targetNodeIds.has(node.id)),
-    addedEdges: targetData.edges.filter((edge) => !baseEdgeIds.has(edge.id)),
-    removedEdges: baseData.edges.filter((edge) => !targetEdgeIds.has(edge.id)),
+    nodes: {
+      added: targetData.nodes.filter((node) => !baseNodeIds.has(node.id)),
+      removed: baseData.nodes.filter((node) => !targetNodeIds.has(node.id)),
+    },
+    edges: {
+      added: targetData.edges.filter((edge) => !baseEdgeIds.has(edge.id)),
+      removed: baseData.edges.filter((edge) => !targetEdgeIds.has(edge.id)),
+    },
   };
 }
 

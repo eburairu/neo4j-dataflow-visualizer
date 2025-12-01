@@ -35,14 +35,14 @@ describe('diffSnapshots', () => {
   test('detects added and removed artifacts between snapshots', () => {
     const diff = diffSnapshots('2024-01-01T00:00:00Z', '2024-02-01T00:00:00Z');
 
-    expect(diff.addedNodes.map((node) => node.id).sort()).toEqual(
+    expect(diff.nodes.added.map((node) => node.id).sort()).toEqual(
       ['gold-mart', 'powerbi', 'taskflow-gold'].sort()
     );
-    expect(diff.removedNodes).toHaveLength(0);
-    expect(diff.addedEdges.map((edge) => edge.id).sort()).toEqual(
+    expect(diff.nodes.removed).toHaveLength(0);
+    expect(diff.edges.added.map((edge) => edge.id).sort()).toEqual(
       ['gold-delivers-bi', 'taskflow-reads-marketing', 'taskflow-reads-silver', 'taskflow-writes-gold'].sort()
     );
-    expect(diff.removedEdges).toHaveLength(0);
+    expect(diff.edges.removed).toHaveLength(0);
   });
 });
 
