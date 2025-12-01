@@ -9,15 +9,10 @@ interface QueryState<T> {
 }
 
 export function useGraphQuery(params: GraphQueryParams): QueryState<GraphResponse> & { refetch: () => void } {
-  const [state, setState] = useState<QueryState<GraphResponse>>({ data: null, loading: false, error: null });
+  const [state, setState] = useState<QueryState<GraphResponse>>({ data: null, loading: true, error: null });
   const requestKey = useMemo(() => JSON.stringify(params), [params]);
 
   useEffect(() => {
-    if (!params.rootId) {
-      setState((current) => ({ ...current, data: null, error: null, loading: false }));
-      return;
-    }
-
     let cancelled = false;
     setState((current) => ({ ...current, loading: true, error: null }));
 

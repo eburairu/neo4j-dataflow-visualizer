@@ -1,4 +1,4 @@
-export type Direction = 'incoming' | 'outgoing' | 'both';
+export type Direction = 'up' | 'down' | 'both';
 
 export interface GraphNode {
   id: string;
@@ -9,10 +9,12 @@ export interface GraphNode {
 
 export interface GraphEdge {
   id?: string;
-  source: string;
-  target: string;
+  source?: string;
+  target?: string;
   type?: string;
   metadata?: Record<string, unknown>;
+  from?: string;
+  to?: string;
 }
 
 export interface GraphResponse {
@@ -25,16 +27,14 @@ export interface GraphResponse {
   };
 }
 
-export type DiffAction = 'added' | 'removed' | 'updated';
-
-export interface DiffChange<T> {
-  action: DiffAction;
-  item: T;
+export interface DiffDelta<T> {
+  added: T[];
+  removed: T[];
 }
 
 export interface DiffResponse {
-  nodes: DiffChange<GraphNode>[];
-  edges: DiffChange<GraphEdge>[];
+  nodes: DiffDelta<GraphNode>;
+  edges: DiffDelta<GraphEdge>;
 }
 
 export interface GraphQueryParams {
