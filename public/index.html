@@ -578,6 +578,9 @@
       let NeoVisClass = null;
       let NeoVisEvents = null;
       let eventsAttached = false;
+      let fallbackSvg = null;
+      let fallbackSimulation = null;
+      let usingNeoVis = false;
 
       function buildLogo(bgColor, textColor, text) {
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">`
@@ -809,6 +812,7 @@
 
       function renderWithCypher(cypher, parameters) {
         if (!ensureNeoVis()) return;
+        usingNeoVis = true;
         const config = buildNeoVisConfig(cypher);
 
         if (!viz) {
@@ -947,38 +951,63 @@
       }
 
       function highlightNodeById(id) {
-        if (!viz?.network) return;
-        viz.network.selectNodes([id]);
-        viz.network.focus(id, { scale: 1.1, animation: true });
         const node = latestGraphData.nodes.find((n) => n.id === id);
+        if (usingNeoVis) {
+          if (!viz?.network) return;
+          viz.network.selectNodes([id]);
+          viz.network.focus(id, { scale: 1.1, animation: true });
+        } else if (fallbackSvg) {
+          fallbackSvg
+            .selectAll('circle')
+            .classed('dimmed', (d) => d.id !== id)
+            .attr('stroke-width', (d) => (d.id === id ? 3 : 1));
+        }
+
         if (node) renderDetails({ ...node, ...getConnections(id) });
       }
 
       function highlightEdgeById(id) {
-        if (!viz?.network) return;
-        viz.network.selectEdges([id]);
-        viz.network.fit({ animation: true });
         const edge = latestGraphData.edges.find((e) => e.id === id);
+        if (usingNeoVis) {
+          if (!viz?.network) return;
+          viz.network.selectEdges([id]);
+          viz.network.fit({ animation: true });
+        } else if (fallbackSvg) {
+          fallbackSvg
+            .selectAll('line')
+            .classed('dimmed', (d) => d.id !== id)
+            .attr('stroke-width', (d) => (d.id === id ? 3 : 1.5));
+        }
+
         if (edge) renderDetails(edge);
       }
 
       function applySearchHighlight(term) {
         const lowered = term.trim().toLowerCase();
-        if (!viz?.network) return;
+        if (usingNeoVis) {
+          if (!viz?.network) return;
 
-        if (!lowered) {
-          viz.network.unselectAll();
+          if (!lowered) {
+            viz.network.unselectAll();
+            return;
+          }
+
+          const matched = latestGraphData.nodes.filter(
+            (d) => d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered)
+          );
+          if (matched.length) {
+            const ids = matched.map((m) => m.id);
+            viz.network.selectNodes(ids, false);
+            viz.network.focus(ids[0], { scale: 1.1, animation: true });
+          }
           return;
         }
 
-        const matched = latestGraphData.nodes.filter(
-          (d) => d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered)
-        );
-        if (matched.length) {
-          const ids = matched.map((m) => m.id);
-          viz.network.selectNodes(ids, false);
-          viz.network.focus(ids[0], { scale: 1.1, animation: true });
-        }
+        if (!fallbackSvg) return;
+        fallbackSvg
+          .selectAll('circle')
+          .classed('dimmed', (d) => !!lowered && !d.id.toLowerCase().includes(lowered) && !(d.name || '').toLowerCase().includes(lowered))
+          .attr('stroke-width', (d) => ((d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered)) && lowered ? 3 : 1));
       }
 
       function updateSuggestionList(results) {
@@ -1160,32 +1189,135 @@
         const user = neo4jUserInput.value || defaultNeo4jConfig.user;
         const password = neo4jPasswordInput.value || defaultNeo4jConfig.password;
         if (!uri || !user || !password) {
-          graphSummary.textContent = 'Bolt URI / ユーザ / パスワードを入力してください。';
           return false;
         }
         return true;
       }
 
-      function loadGraph() {
-        if (!ensureConnectionConfig()) return;
+      async function renderFallbackGraph(graph) {
+        usingNeoVis = false;
+        const container = document.getElementById('graph');
+        container.innerHTML = '';
+
+        const width = container.clientWidth || container.offsetWidth || 960;
+        const height = container.clientHeight || container.offsetHeight || 520;
+
+        const nodes = (graph.nodes || []).map((node) => ({
+          ...node,
+          label: node.label || node.labels?.[0] || 'Node',
+        }));
+        const links = graph.edges || [];
+        latestGraphData = { nodes, edges: links };
+        renderStats();
+        renderSearchResults(searchGraph(searchInput.value), searchInput.value);
+
+        fallbackSvg = d3
+          .select(container)
+          .append('svg')
+          .attr('width', '100%')
+          .attr('height', '100%')
+          .style('border-radius', '12px');
+
+        fallbackSvg.selectAll('*').remove();
+        if (fallbackSimulation) fallbackSimulation.stop();
+
+        const link = fallbackSvg
+          .append('g')
+          .attr('stroke', '#4b5563')
+          .attr('stroke-opacity', 0.7)
+          .selectAll('line')
+          .data(links)
+          .enter()
+          .append('line')
+          .attr('stroke-width', 1.5)
+          .on('click', (_, d) => {
+            highlightEdgeById(d.id);
+          });
+
+        const nodeGroup = fallbackSvg
+          .append('g')
+          .selectAll('g')
+          .data(nodes)
+          .enter()
+          .append('g')
+          .attr('class', 'node');
+
+        const circle = nodeGroup
+          .append('circle')
+          .attr('r', 16)
+          .attr('fill', (d) => colorForNode(d))
+          .attr('stroke', '#0b1220')
+          .attr('stroke-width', 1)
+          .on('click', (_, d) => {
+            highlightNodeById(d.id);
+          });
+
+        nodeGroup
+          .append('text')
+          .text((d) => d.name || d.id)
+          .attr('x', 20)
+          .attr('y', 4)
+          .attr('fill', '#e2e8f0')
+          .attr('font-size', 12);
+
+        fallbackSimulation = d3
+          .forceSimulation(nodes)
+          .force('link', d3.forceLink(links).id((d) => d.id).distance(140))
+          .force('charge', d3.forceManyBody().strength(-550))
+          .force('center', d3.forceCenter(width / 2, height / 2));
+
+        fallbackSimulation.on('tick', () => {
+          link
+            .attr('x1', (d) => d.source.x)
+            .attr('y1', (d) => d.source.y)
+            .attr('x2', (d) => d.target.x)
+            .attr('y2', (d) => d.target.y);
+
+          nodeGroup.attr('transform', (d) => `translate(${d.x}, ${d.y})`);
+        });
+
+        graphSummary.textContent = `ノード ${nodes.length} 件 / エッジ ${links.length} 件 (サンプル)`;
+        lastUpdated.textContent = `last updated ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value || 'sample'}`;
+      }
+
+      async function loadGraph() {
         if (!rootInput.value.trim()) {
           graphSummary.textContent = '起点ノード ID を入力してください。';
           return;
         }
-        const cypher = buildTraversalCypher();
+
         const params = {
           rootId: rootInput.value.trim(),
           depth: Number(depthInput.value) || 10,
           snapshot: snapshotSelect.value || null,
+          direction: directionSelect.value,
         };
+
+        if (!ensureConnectionConfig()) {
+          graphSummary.textContent = 'サンプルデータでグラフを描画しています...';
+          const query = new URLSearchParams(params).toString();
+          const data = await fetchJson(`/api/graph?${query}`);
+          renderFallbackGraph(data);
+          return;
+        }
+
+        const cypher = buildTraversalCypher();
         graphSummary.textContent = 'ロード中...';
         renderWithCypher(cypher, params);
       }
 
-      function loadAllGraph() {
-        if (!ensureConnectionConfig()) return;
-        const cypher = buildFullGraphCypher();
+      async function loadAllGraph() {
         const params = { snapshot: snapshotSelect.value || null };
+
+        if (!ensureConnectionConfig()) {
+          graphSummary.textContent = 'サンプルの全体グラフを描画しています...';
+          const query = new URLSearchParams(params).toString();
+          const data = await fetchJson(`/api/graph/all?${query}`);
+          renderFallbackGraph(data);
+          return;
+        }
+
+        const cypher = buildFullGraphCypher();
         graphSummary.textContent = '全体のグラフをロード中...';
         renderWithCypher(cypher, params);
       }
