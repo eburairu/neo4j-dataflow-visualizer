@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "test": "jest",
-    "build": "node -e \"console.log('Build step not required for Express API deployment')\""
+    "build": "node -e \"console.log('Build step not required for Express API deployment')\"",
+    "seed:neo4j": "node scripts/seed-neo4j.js"
   },
   "keywords": [],
   "author": "",
