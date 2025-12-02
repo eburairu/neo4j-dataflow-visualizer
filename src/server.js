@@ -16,6 +16,14 @@ app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', message: 'IDMC CDI dependency graph service running' });
 });
 
+app.get('/api/neo4j-config', (_req, res) => {
+  res.json({
+    uri: config.neo4jUri,
+    user: config.neo4jUser,
+    password: config.neo4jPassword,
+  });
+});
+
 app.use('/api', graphRoutes);
 
 app.get('/', (_req, res) => {

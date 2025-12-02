@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Neo4j Dataflow Visualizer</title>
     <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/neovis.js@2.1.0/dist/neovis.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -415,6 +416,21 @@
         <h2>コントロール</h2>
         <div class="control-grid">
           <div class="field">
+            <label for="neo4jUri">Neo4j Bolt URI</label>
+            <input id="neo4jUri" name="neo4jUri" placeholder="bolt://localhost:7687" />
+          </div>
+          <div class="row" style="gap: 8px;">
+            <div class="field" style="flex: 1;">
+              <label for="neo4jUser">ユーザ</label>
+              <input id="neo4jUser" name="neo4jUser" placeholder="neo4j" />
+            </div>
+            <div class="field" style="flex: 1;">
+              <label for="neo4jPassword">パスワード</label>
+              <input id="neo4jPassword" name="neo4jPassword" type="password" placeholder="password" />
+            </div>
+          </div>
+          <div class="muted-text" id="connectionHint">.env で設定された接続情報があれば自動で反映します。</div>
+          <div class="field">
             <label for="snapshotSelect">スナップショット</label>
             <select id="snapshotSelect" name="snapshot"></select>
           </div>
@@ -510,6 +526,7 @@
       </div>
     </div>
 
+    
     <script>
       const snapshotSelect = document.getElementById('snapshotSelect');
       const baseSnapshot = document.getElementById('baseSnapshot');
@@ -522,41 +539,51 @@
       const loadAllGraphBtn = document.getElementById('loadAllGraph');
       const resetViewBtn = document.getElementById('resetView');
       const healthStatus = document.getElementById('healthStatus');
+      const details = document.getElementById('details');
       const graphSummary = document.getElementById('graphSummary');
       const lastUpdated = document.getElementById('lastUpdated');
       const diffForm = document.getElementById('diffForm');
       const diffOutput = document.getElementById('diffOutput');
-      const details = document.getElementById('details');
-      const graphContainer = document.getElementById('graph');
       const detailFlyout = document.getElementById('detailFlyout');
       const detailContent = document.getElementById('detailContent');
       const closeFlyout = document.getElementById('closeFlyout');
-      const searchResults = document.getElementById('searchResults');
       const searchSuggestions = document.getElementById('searchSuggestions');
-
-      let currentData = { nodes: [], edges: [] };
-      let simulation;
-      let svg;
-      let zoomLayer;
-      let suggestionLookup = new Map();
-      let latestSearchResults = { nodes: [], edges: [] };
-      let searchDebounce;
-      let nodeDragged = false;
-
-      const bronzeColor = '#b87333';
-      const silverColor = '#c0c0c0';
-      const goldColor = '#f5c542';
+      const searchResults = document.getElementById('searchResults');
+      const neo4jUriInput = document.getElementById('neo4jUri');
+      const neo4jUserInput = document.getElementById('neo4jUser');
+      const neo4jPasswordInput = document.getElementById('neo4jPassword');
+      const connectionHint = document.getElementById('connectionHint');
 
       const labelColors = {
         Pipeline: '#38bdf8',
-        Dataset: silverColor,
-        ExternalSystem: '#0ea5e9',
-        BIApp: '#0ea5e9',
+        Dataset: '#c0c0c0',
+        Taskflow: '#c084fc',
         Schedule: '#c084fc',
+        External: '#0ea5e9',
+        Connection: '#67e8f9',
+        BI: '#0ea5e9',
       };
+      const bronzeColor = '#b87333';
+      const silverColor = '#c0c0c0';
+      const goldColor = '#f5c542';
+      const RELATIONSHIP_TYPES =
+        ':INGESTS_FROM|:READS_FROM|:WRITES_TO|:DELIVERS_TO|:CALLS|:USES_CONNECTION|:RUNS_ON|:TRIGGERS';
 
-      function buildLogo(bg, fg, text) {
-        const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64' viewBox='0 0 64 64'><rect rx='12' ry='12' width='64' height='64' fill='${bg}'/><text x='32' y='38' text-anchor='middle' font-family='Inter,Arial, sans-serif' font-size='26' font-weight='700' fill='${fg}'>${text}</text></svg>`;
+      let searchDebounce;
+      let suggestionLookup = new Map();
+      let latestSearchResults = { nodes: [], edges: [] };
+      let latestGraphData = { nodes: [], edges: [] };
+      let defaultNeo4jConfig = { uri: '', user: '', password: '' };
+      let viz;
+      let NeoVisClass = null;
+      let NeoVisEvents = null;
+      let eventsAttached = false;
+
+      function buildLogo(bgColor, textColor, text) {
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">`
+          + `<rect width="64" height="64" rx="14" fill="${bgColor}"/>`
+          + `<text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="${textColor}" font-size="24" font-family="Inter, sans-serif" font-weight="700">${text}</text>`
+          + '</svg>';
         return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
       }
 
@@ -600,6 +627,17 @@
         return labelColors[node.label] || '#94a3b8';
       }
 
+      function sizeForNode(node) {
+        if (node.label === 'Dataset') {
+          if (node.layer === 'Gold') return 26;
+          if (node.layer === 'Silver') return 22;
+          if (node.layer === 'Bronze') return 20;
+          return 18;
+        }
+        if (node.label === 'Pipeline') return 22;
+        return 16;
+      }
+
       function formatJson(data) {
         return JSON.stringify(data, null, 2);
       }
@@ -624,13 +662,221 @@
         }
       }
 
-      function renderStats(data) {
-        const counts = {
-          totalNodes: data.nodes.length,
-          totalEdges: data.edges.length,
-          pipelines: data.nodes.filter((n) => n.label === 'Pipeline').length,
-          datasets: data.nodes.filter((n) => n.label === 'Dataset').length,
+      function normalizeNeo4jNode(rawNode, visNode = {}) {
+        const node = rawNode || visNode.raw;
+        const props = node?.properties || {};
+        const label = (node?.labels && node.labels[0]) || visNode.label || props.label || props.type;
+        const id = props.id || visNode.id || node?.identity?.toString?.() || '';
+        return {
+          id,
+          label,
+          name: props.name || props.id || id,
+          layer: props.layer,
+          type: props.type || label,
+          properties: props,
         };
+      }
+
+      function normalizeNeo4jEdge(edge) {
+        if (!edge) return null;
+        const raw = edge.raw || {};
+        const props = raw.properties || {};
+        const type = raw.type || edge.label || props.type || props.rel_type || edge.title || edge.id;
+        const id = props.id || edge.id || `${edge.from || ''}-${type || 'REL'}-${edge.to || ''}`;
+        return {
+          id,
+          type,
+          from: edge.from,
+          to: edge.to,
+          properties: props,
+        };
+      }
+
+      function getConnections(nodeId) {
+        const upstream = latestGraphData.edges.filter((e) => e.to === nodeId).map((e) => e.from);
+        const downstream = latestGraphData.edges.filter((e) => e.from === nodeId).map((e) => e.to);
+        return { upstream, downstream };
+      }
+
+      function ensureNeoVis() {
+        if (NeoVisClass) return true;
+        NeoVisClass = window.NeoVis?.default || window.NeoVis;
+        NeoVisEvents = window.NeoVis?.NeoVisEvents || window.NeoVisEvents || NeoVisClass?.NeoVisEvents;
+        if (!NeoVisClass) {
+          graphSummary.textContent = 'Neovis の読み込みに失敗しました。';
+          return false;
+        }
+        return true;
+      }
+
+      function buildLabelConfig(advancedKey) {
+        const baseConfig = {
+          label: 'name',
+          title: 'id',
+          shape: 'dot',
+          font: { color: '#e2e8f0', size: 14, face: 'Inter' },
+        };
+
+        baseConfig[advancedKey] = {
+          function: {
+            color: (node) => colorForNode(normalizeNeo4jNode(node)),
+            shape: (node) => (logoForNode(normalizeNeo4jNode(node)) ? 'image' : 'dot'),
+            image: (node) => logoForNode(normalizeNeo4jNode(node)),
+            size: (node) => sizeForNode(normalizeNeo4jNode(node)),
+            title: (node) => formatJson(normalizeNeo4jNode(node).properties),
+          },
+        };
+
+        return {
+          [NeoVisClass.NEOVIS_DEFAULT_CONFIG]: baseConfig,
+          Dataset: {
+            ...baseConfig,
+            [advancedKey]: {
+              function: {
+                ...baseConfig[advancedKey].function,
+                shape: () => 'dot',
+              },
+            },
+          },
+          Pipeline: baseConfig,
+          Taskflow: baseConfig,
+          External: baseConfig,
+          BI: baseConfig,
+          Schedule: baseConfig,
+          Connection: baseConfig,
+        };
+      }
+
+      function buildRelationshipConfig(advancedKey) {
+        return {
+          [NeoVisClass.NEOVIS_DEFAULT_CONFIG]: {
+            arrows: 'to',
+            color: '#64748b',
+            font: { color: '#cbd5e1', size: 11 },
+            smooth: { enabled: true },
+            [advancedKey]: {
+              function: {
+                title: (edge) => formatJson(normalizeNeo4jEdge(edge)?.properties || {}),
+              },
+            },
+          },
+          INGESTS_FROM: { color: '#38bdf8' },
+          READS_FROM: { color: '#38bdf8' },
+          WRITES_TO: { color: goldColor },
+          DELIVERS_TO: { color: '#c084fc' },
+          RUNS_ON: { color: '#67e8f9' },
+          CALLS: { color: '#8b5cf6' },
+        };
+      }
+
+      function buildVisConfig() {
+        return {
+          nodes: {
+            borderWidth: 1,
+            shadow: true,
+          },
+          edges: {
+            arrows: 'to',
+            smooth: {
+              enabled: true,
+              type: 'dynamic',
+            },
+            color: { color: '#64748b' },
+          },
+          physics: {
+            enabled: true,
+            stabilization: { iterations: 120, fit: true },
+          },
+        };
+      }
+
+      function buildNeoVisConfig(cypher) {
+        const advancedKey = NeoVisClass.NEOVIS_ADVANCED_CONFIG;
+        return {
+          containerId: 'graph',
+          neo4j: {
+            serverUrl: neo4jUriInput.value || defaultNeo4jConfig.uri,
+            serverUser: neo4jUserInput.value || defaultNeo4jConfig.user,
+            serverPassword: neo4jPasswordInput.value || defaultNeo4jConfig.password,
+          },
+          visConfig: buildVisConfig(),
+          labels: buildLabelConfig(advancedKey),
+          relationships: buildRelationshipConfig(advancedKey),
+          initialCypher: cypher,
+          consoleDebug: false,
+        };
+      }
+
+      function renderWithCypher(cypher, parameters) {
+        if (!ensureNeoVis()) return;
+        const config = buildNeoVisConfig(cypher);
+
+        if (!viz) {
+          viz = new NeoVisClass(config);
+          eventsAttached = false;
+          attachNeoVisEvents();
+        } else {
+          viz.reinit(config, parameters);
+          eventsAttached = false;
+          attachNeoVisEvents();
+        }
+
+        try {
+          viz.renderWithCypher(cypher, parameters);
+          graphSummary.textContent = 'Neovis でクエリを実行中...';
+        } catch (error) {
+          graphSummary.textContent = `Neovis 実行エラー: ${error.message}`;
+        }
+      }
+
+      function attachNeoVisEvents() {
+        if (!viz || !NeoVisEvents || eventsAttached) return;
+        eventsAttached = true;
+        viz.registerOnEvent(NeoVisEvents.CompletionEvent, () => {
+          refreshGraphState();
+        });
+
+        viz.registerOnEvent(NeoVisEvents.ClickNodeEvent, ({ node }) => {
+          const normalized = normalizeNeo4jNode(node.raw || node);
+          const { upstream, downstream } = getConnections(normalized.id);
+          renderDetails({ ...normalized, upstream, downstream });
+        });
+
+        viz.registerOnEvent(NeoVisEvents.ClickEdgeEvent, ({ edge }) => {
+          const normalized = normalizeNeo4jEdge(edge);
+          if (normalized) renderDetails(normalized);
+        });
+
+        viz.registerOnEvent(NeoVisEvents.ErrorEvent, ({ error }) => {
+          graphSummary.textContent = `Neovis エラー: ${error.message}`;
+        });
+      }
+
+      function refreshGraphState() {
+        if (!viz) return;
+        const nodes = viz.nodes?.get().map((n) => normalizeNeo4jNode(n.raw || n)) || [];
+        const edges = viz.edges?.get().map((e) => normalizeNeo4jEdge(e)).filter(Boolean) || [];
+        latestGraphData = { nodes, edges };
+        renderStats();
+        renderSearchResults(searchGraph(searchInput.value), searchInput.value);
+        lastUpdated.textContent = `last updated ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value || 'n/a'}`;
+        if (!nodes.length && !edges.length) {
+          graphSummary.textContent = 'クエリに一致するノードやリレーションがありませんでした。';
+        }
+      }
+
+      function renderStats() {
+        const counts = {
+          totalNodes: latestGraphData.nodes.length,
+          totalEdges: latestGraphData.edges.length,
+          pipelines: latestGraphData.nodes.filter((n) => n.label === 'Pipeline').length,
+          datasets: latestGraphData.nodes.filter((n) => n.label === 'Dataset').length,
+        };
+
+        if (!counts.totalNodes && !counts.totalEdges) {
+          graphSummary.textContent = 'ノードとエッジをロードしてください。';
+          return;
+        }
 
         graphSummary.textContent = `ノード ${counts.totalNodes} 件 / エッジ ${counts.totalEdges} 件 | Pipeline ${counts.pipelines}, Dataset ${counts.datasets}`;
       }
@@ -658,31 +904,33 @@
               <div class="muted-text">上流: ${from}</div>
               <div class="muted-text">下流: ${to}</div>
             </div>
-            <div class="pre">${formatJson({ ...item, source: from, target: to })}</div>
+            <div class="pre">${formatJson(item.properties || {})}</div>
           `;
         } else {
-          const connected = currentData.edges.filter((e) => e.from === item.id || e.to === item.id);
-          const upstream = connected.filter((e) => e.to === item.id).map((e) => e.from);
-          const downstream = connected.filter((e) => e.from === item.id).map((e) => e.to);
-
+          const upstream = item.upstream || [];
+          const downstream = item.downstream || [];
+          const logo = logoForNode(item);
           content = `
-          <div class="chips">
-            <span class="chip">${item.label}</span>
-            ${item.layer ? `<span class="chip">Layer: ${item.layer}</span>` : ''}
-            ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
-          </div>
-          <div>
-            <div class="section-title">${item.name || item.id}</div>
-            <div class="muted-text">ID: ${item.id}</div>
-          </div>
-          <div>
-            <div class="section-title">接続ノード</div>
-            <div class="muted-text">上流: ${upstream.length ? upstream.join(', ') : 'なし'}</div>
-            <div class="muted-text">下流: ${downstream.length ? downstream.join(', ') : 'なし'}</div>
-          </div>
-          <div class="pre">${formatJson(item)}</div>
-          <button class="secondary" id="useAsRoot">このノードを起点に再探索</button>
-        `;
+            <div class="chips">
+              <span class="chip">${item.label || 'Node'}</span>
+              ${item.layer ? `<span class="chip">Layer: ${item.layer}</span>` : ''}
+              ${item.type ? `<span class="chip">Type: ${item.type}</span>` : ''}
+            </div>
+            <div class="row" style="align-items:center; gap:12px;">
+              ${logo ? `<img src="${logo}" alt="logo" width="48" height="48" style="border-radius:12px; border:1px solid var(--border);"/>` : ''}
+              <div>
+                <div class="section-title">${item.name || item.id}</div>
+                <div class="muted-text">ID: ${item.id}</div>
+              </div>
+            </div>
+            <div>
+              <div class="section-title">接続ノード</div>
+              <div class="muted-text">上流: ${upstream.length ? upstream.join(', ') : 'なし'}</div>
+              <div class="muted-text">下流: ${downstream.length ? downstream.join(', ') : 'なし'}</div>
+            </div>
+            <div class="pre">${formatJson(item.properties || {})}</div>
+            <button class="secondary" id="useAsRoot">このノードを起点に再探索</button>
+          `;
         }
 
         detailContent.innerHTML = content;
@@ -698,14 +946,39 @@
         }
       }
 
+      function highlightNodeById(id) {
+        if (!viz?.network) return;
+        viz.network.selectNodes([id]);
+        viz.network.focus(id, { scale: 1.1, animation: true });
+        const node = latestGraphData.nodes.find((n) => n.id === id);
+        if (node) renderDetails({ ...node, ...getConnections(id) });
+      }
+
+      function highlightEdgeById(id) {
+        if (!viz?.network) return;
+        viz.network.selectEdges([id]);
+        viz.network.fit({ animation: true });
+        const edge = latestGraphData.edges.find((e) => e.id === id);
+        if (edge) renderDetails(edge);
+      }
+
       function applySearchHighlight(term) {
         const lowered = term.trim().toLowerCase();
-        if (!svg) return;
+        if (!viz?.network) return;
 
-        svg.selectAll('g.node').classed('dimmed', (d) => {
-          if (!lowered) return false;
-          return !(d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered));
-        });
+        if (!lowered) {
+          viz.network.unselectAll();
+          return;
+        }
+
+        const matched = latestGraphData.nodes.filter(
+          (d) => d.id.toLowerCase().includes(lowered) || (d.name || '').toLowerCase().includes(lowered)
+        );
+        if (matched.length) {
+          const ids = matched.map((m) => m.id);
+          viz.network.selectNodes(ids, false);
+          viz.network.focus(ids[0], { scale: 1.1, animation: true });
+        }
       }
 
       function updateSuggestionList(results) {
@@ -723,7 +996,7 @@
         results.edges.forEach((edge) => {
           const option = document.createElement('option');
           option.value = edge.id;
-          option.label = `リレーション: ${edge.type} (${edge.from} -> ${edge.to})`;
+          option.label = `リレーション: ${edge.type || 'relation'} (${edge.from} -> ${edge.to})`;
           searchSuggestions.appendChild(option);
           suggestionLookup.set(edge.id, { kind: 'edge', item: edge });
         });
@@ -760,7 +1033,7 @@
           .map(
             (edge) => `
               <div class="stat-card" data-edge-id="${edge.id}" style="margin-top: 8px;">
-                <div class="section-title">${edge.type}</div>
+                <div class="section-title">${edge.type || 'RELATION'}</div>
                 <div class="muted-text">${edge.from} → ${edge.to}</div>
                 <div class="row">
                   <button class="secondary" data-action="highlight-edge" data-edge-id="${edge.id}">詳細</button>
@@ -781,8 +1054,7 @@
             const id = event.currentTarget.dataset.nodeId;
             searchInput.value = id;
             applySearchHighlight(id);
-            const node = results.nodes.find((n) => n.id === id);
-            if (node) renderDetails(node);
+            highlightNodeById(id);
           });
         });
 
@@ -797,30 +1069,9 @@
         searchResults.querySelectorAll('[data-action="highlight-edge"]').forEach((btn) => {
           btn.addEventListener('click', (event) => {
             const id = event.currentTarget.dataset.edgeId;
-            const edge = results.edges.find((e) => e.id === id);
-            if (edge) {
-              renderDetails({ id: edge.id, type: edge.type, source: { id: edge.from }, target: { id: edge.to }, properties: edge.properties || {} });
-            }
+            highlightEdgeById(id);
           });
         });
-      }
-
-      async function fetchSearchSuggestions(term) {
-        const trimmed = term.trim();
-        if (trimmed.length < 2) {
-          searchResults.textContent = '検索キーワードを2文字以上入力すると候補を表示します。';
-          searchSuggestions.innerHTML = '';
-          return;
-        }
-
-        try {
-          const params = new URLSearchParams({ term: trimmed, snapshot: snapshotSelect.value });
-          const results = await fetchJson(`/api/search?${params.toString()}`);
-          updateSuggestionList(results);
-          renderSearchResults(results, term);
-        } catch (error) {
-          searchResults.textContent = `検索に失敗しました: ${error.message}`;
-        }
       }
 
       function handleSearchSelection(value) {
@@ -830,7 +1081,7 @@
         if (suggestion.kind === 'node') {
           searchInput.value = suggestion.item.id;
           applySearchHighlight(suggestion.item.id);
-          renderDetails(suggestion.item);
+          renderDetails({ ...suggestion.item, ...getConnections(suggestion.item.id) });
         } else if (suggestion.kind === 'edge') {
           searchInput.value = suggestion.item.id;
           renderDetails({
@@ -840,276 +1091,103 @@
             target: { id: suggestion.item.to },
             properties: suggestion.item.properties || {},
           });
+          highlightEdgeById(suggestion.item.id);
         }
       }
 
-      function computeLeftToRightPositions(nodes, links) {
-        const depth = new Map(nodes.map((n) => [n.id, Number.POSITIVE_INFINITY]));
-        const indegree = new Map(nodes.map((n) => [n.id, 0]));
-        const graph = new Map(nodes.map((n) => [n.id, []]));
-
-        links.forEach((edge) => {
-          const from = edge.from;
-          const to = edge.to;
-          if (!graph.has(from)) graph.set(from, []);
-          graph.get(from).push(to);
-          indegree.set(to, (indegree.get(to) || 0) + 1);
-        });
-
-        const queue = [];
-        if (rootInput.value && depth.has(rootInput.value)) {
-          depth.set(rootInput.value, 0);
-          queue.push(rootInput.value);
-        } else {
-          nodes.forEach((node) => {
-            if ((indegree.get(node.id) || 0) === 0) {
-              depth.set(node.id, 0);
-              queue.push(node.id);
-            }
-          });
+      function searchGraph(term) {
+        const lowered = term.trim().toLowerCase();
+        if (!lowered) {
+          return { nodes: [], edges: [] };
         }
 
-        if (!queue.length && nodes.length) {
-          depth.set(nodes[0].id, 0);
-          queue.push(nodes[0].id);
-        }
+        const nodes = latestGraphData.nodes.filter(
+          (node) => node.id.toLowerCase().includes(lowered) || (node.name || '').toLowerCase().includes(lowered)
+        );
+        const edges = latestGraphData.edges.filter((edge) =>
+          [edge.id, edge.type, edge.from, edge.to].some((value) => `${value || ''}`.toLowerCase().includes(lowered))
+        );
 
-        while (queue.length) {
-          const current = queue.shift();
-          const currentDepth = depth.get(current);
-          (graph.get(current) || []).forEach((next) => {
-            if (depth.get(next) > currentDepth + 1) {
-              depth.set(next, currentDepth + 1);
-              queue.push(next);
-            }
-          });
-        }
-
-        const finiteDepths = Array.from(depth.values()).filter((d) => Number.isFinite(d));
-        const fallback = finiteDepths.length ? Math.max(...finiteDepths) : 0;
-        nodes.forEach((node) => {
-          if (!Number.isFinite(depth.get(node.id))) depth.set(node.id, fallback);
-        });
-
-        return depth;
+        return { nodes, edges };
       }
 
-      function initSimulation(width, height, nodes, links, xPositions) {
-        if (simulation) simulation.stop();
-
-        const maxDepth = Math.max(...Array.from(xPositions.values()));
-        const xScale = d3
-          .scaleLinear()
-          .domain([0, maxDepth || 1])
-          .range([48, width - 48]);
-
-        nodes.forEach((node, idx) => {
-          const depth = xPositions.get(node.id) || 0;
-          node.x = xScale(depth);
-          node.y = height / 2 + ((idx % 6) - 3) * 18;
-          node.vx = 0;
-          node.vy = 0;
-        });
-
-        simulation = d3
-          .forceSimulation(nodes)
-          .force(
-            'link',
-            d3
-              .forceLink(links)
-              .id((d) => d.id)
-              .distance(140)
-              .strength(0.6)
-          )
-          .force('charge', d3.forceManyBody())
-          .force('x', d3.forceX((d) => xScale(xPositions.get(d.id) || 0)).strength(0.4))
-          .force('y', d3.forceY(height / 2))
-          .force('center', d3.forceCenter(width / 2, height / 2))
-          .force('collision', d3.forceCollide().radius(70));
-      }
-
-      function renderGraph(data) {
-        const nodes = data.nodes || [];
-        const nodeIds = new Set(nodes.map((node) => node.id));
-        const normalizedEdges = (data.edges || [])
-          .filter((edge) => nodeIds.has(edge.from) && nodeIds.has(edge.to))
-          .map((edge) => ({ ...edge, source: edge.from, target: edge.to }));
-
-        currentData = { nodes, edges: normalizedEdges };
-        renderStats(currentData);
-
-        if (!nodes.length) {
-          graphSummary.textContent = 'ノードが見つかりませんでした。rootId を確認してください。';
-          d3.select(graphContainer).selectAll('*').remove();
+      function fetchSearchSuggestions(term) {
+        const trimmed = term.trim();
+        if (trimmed.length < 2) {
+          searchResults.textContent = '検索キーワードを2文字以上入力すると候補を表示します。';
+          searchSuggestions.innerHTML = '';
           return;
         }
 
-        const width = graphContainer.clientWidth;
-        const height = graphContainer.clientHeight;
+        const results = searchGraph(trimmed);
+        updateSuggestionList(results);
+        renderSearchResults(results, term);
+      }
 
-        d3.select(graphContainer).selectAll('*').remove();
+      function buildTraversalCypher() {
+        const direction = directionSelect.value;
+        const queryDirection = direction === 'up' ? '<-' : direction === 'down' ? '->' : '-';
+        const depth = Number(depthInput.value) || 10;
+        const snapshot = snapshotSelect.value;
+        const snapshotFilter = snapshot ? '{snapshot_at: $snapshot}' : '';
 
-        svg = d3
-          .select('#graph')
-          .append('svg')
-          .attr('width', width)
-          .attr('height', height)
-          .style('cursor', 'grab');
+        return `
+          MATCH (root {id: $rootId})
+          ${snapshot ? 'WHERE root.snapshot_at = $snapshot' : ''}
+          OPTIONAL MATCH path=(root)${queryDirection}[rel${RELATIONSHIP_TYPES}*1..$depth]${queryDirection}(n ${snapshotFilter})
+          WITH [node IN collect(distinct root) + collect(distinct n) WHERE node IS NOT NULL] AS nodes,
+               [p IN collect(distinct path) WHERE p IS NOT NULL] AS paths
+          WITH nodes, reduce(relList = [], p IN paths | relList + relationships(p)) AS rels
+          UNWIND nodes AS n
+          OPTIONAL MATCH (n)-[r]-()
+          WHERE size(rels) = 0 OR r IN rels
+          RETURN DISTINCT n, r
+        `;
+      }
 
-        svg.on('click', () => renderDetails(null));
+      function buildFullGraphCypher() {
+        const snapshot = snapshotSelect.value;
+        return `
+          MATCH (n ${snapshot ? '{snapshot_at: $snapshot}' : ''})
+          OPTIONAL MATCH (n)-[r${RELATIONSHIP_TYPES}]->(m)
+          ${snapshot ? 'WHERE r.snapshot_at = $snapshot' : ''}
+          RETURN DISTINCT n, r, m
+        `;
+      }
 
-        const defs = svg.append('defs');
-        defs
-          .append('marker')
-          .attr('id', 'arrow')
-          .attr('viewBox', '0 -5 10 10')
-          .attr('refX', 18)
-          .attr('refY', 0)
-          .attr('markerWidth', 7)
-          .attr('markerHeight', 7)
-          .attr('orient', 'auto')
-          .append('path')
-          .attr('d', 'M0,-5L10,0L0,5')
-          .attr('fill', 'rgba(255,255,255,0.7)');
+      function ensureConnectionConfig() {
+        const uri = neo4jUriInput.value || defaultNeo4jConfig.uri;
+        const user = neo4jUserInput.value || defaultNeo4jConfig.user;
+        const password = neo4jPasswordInput.value || defaultNeo4jConfig.password;
+        if (!uri || !user || !password) {
+          graphSummary.textContent = 'Bolt URI / ユーザ / パスワードを入力してください。';
+          return false;
+        }
+        return true;
+      }
 
-        zoomLayer = svg.append('g');
+      function loadGraph() {
+        if (!ensureConnectionConfig()) return;
+        if (!rootInput.value.trim()) {
+          graphSummary.textContent = '起点ノード ID を入力してください。';
+          return;
+        }
+        const cypher = buildTraversalCypher();
+        const params = {
+          rootId: rootInput.value.trim(),
+          depth: Number(depthInput.value) || 10,
+          snapshot: snapshotSelect.value || null,
+        };
+        graphSummary.textContent = 'ロード中...';
+        renderWithCypher(cypher, params);
+      }
 
-        const link = zoomLayer
-          .append('g')
-          .attr('stroke', 'rgba(255,255,255,0.25)')
-          .attr('stroke-width', 1.4)
-          .selectAll('line')
-          .data(normalizedEdges)
-          .enter()
-          .append('line')
-          .attr('marker-end', 'url(#arrow)')
-          .on('click pointerdown', (event, d) => {
-            event.stopPropagation();
-            renderDetails(d);
-          });
-
-        const nodeGroup = zoomLayer
-          .append('g')
-          .selectAll('g')
-          .data(nodes)
-          .enter()
-          .append('g')
-          .attr('class', 'node')
-          .call(
-            d3
-              .drag()
-              .on('start', (event, d) => {
-                nodeDragged = false;
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                d.fx = d.x;
-                d.fy = d.y;
-              })
-              .on('drag', (event, d) => {
-                nodeDragged = true;
-                d.fx = event.x;
-                d.fy = event.y;
-              })
-              .on('end', (event, d) => {
-                if (!event.active) simulation.alphaTarget(0);
-                d.fx = null;
-                d.fy = null;
-                setTimeout(() => {
-                  nodeDragged = false;
-                }, 0);
-              })
-          )
-          .on('click', (event, d) => {
-            if (nodeDragged) return;
-            event.stopPropagation();
-            renderDetails(d);
-          });
-
-        const rectWidth = 150;
-        const rectHeight = 36;
-
-        nodeGroup.each(function (d) {
-          const group = d3.select(this);
-          const isStorage =
-            d.label === 'Dataset' ||
-            d.label === 'ExternalSystem' ||
-            ['Table', 'ObjectStorage', 'Bucket', 'View', 'File', 'SaaS'].includes(d.type);
-
-          if (isStorage) {
-            group
-              .append('rect')
-              .attr('x', -rectWidth / 2)
-              .attr('y', -rectHeight / 2)
-              .attr('rx', 8)
-              .attr('ry', 8)
-              .attr('width', rectWidth)
-              .attr('height', rectHeight)
-              .attr('fill', (n) => colorForNode(n))
-              .attr('stroke', 'rgba(255,255,255,0.6)')
-              .attr('stroke-width', 1.1)
-              .attr('opacity', 0.9);
-          } else {
-            group
-              .append('circle')
-              .attr('r', 18)
-              .attr('fill', (n) => colorForNode(n))
-              .attr('stroke', 'rgba(255,255,255,0.6)')
-              .attr('stroke-width', 1.1)
-              .attr('opacity', 0.9);
-          }
-
-          const logo = logoForNode(d);
-          if (logo) {
-            const iconSize = 22;
-            const iconX = isStorage ? -rectWidth / 2 + 10 : -iconSize / 2;
-            const iconY = isStorage ? -rectHeight / 2 + 7 : -iconSize / 2;
-
-            group
-              .append('image')
-              .attr('href', logo)
-              .attr('x', iconX)
-              .attr('y', iconY)
-              .attr('width', iconSize)
-              .attr('height', iconSize);
-          }
-
-          const textAnchor = logo ? 'start' : 'middle';
-          const textX = logo ? (isStorage ? -rectWidth / 2 + 40 : 14) : 0;
-          group
-            .append('text')
-            .attr('x', textX)
-            .attr('y', 5)
-            .attr('text-anchor', textAnchor)
-            .text((n) => n.name || n.id)
-            .attr('fill', '#e2e8f0')
-            .attr('font-size', 12)
-            .attr('font-weight', 600);
-        });
-
-        nodeGroup.append('title').text((d) => `${d.label}${d.layer ? ` (${d.layer})` : ''}`);
-
-        const xPositions = computeLeftToRightPositions(nodes, normalizedEdges);
-        initSimulation(width, height, nodes, normalizedEdges, xPositions);
-
-        simulation.on('tick', () => {
-          link
-            .attr('x1', (d) => d.source.x)
-            .attr('y1', (d) => d.source.y)
-            .attr('x2', (d) => d.target.x)
-            .attr('y2', (d) => d.target.y);
-
-          nodeGroup.attr('transform', (d) => `translate(${d.x},${d.y})`);
-        });
-
-        svg.call(
-          d3
-            .zoom()
-            .scaleExtent([0.4, 2])
-            .on('zoom', (event) => {
-              zoomLayer.attr('transform', event.transform);
-            })
-        );
-
-        applySearchHighlight(searchInput.value);
+      function loadAllGraph() {
+        if (!ensureConnectionConfig()) return;
+        const cypher = buildFullGraphCypher();
+        const params = { snapshot: snapshotSelect.value || null };
+        graphSummary.textContent = '全体のグラフをロード中...';
+        renderWithCypher(cypher, params);
       }
 
       async function loadSnapshots() {
@@ -1132,44 +1210,10 @@
         }
       }
 
-      async function loadGraph() {
-        const params = new URLSearchParams({
-          rootId: rootInput.value.trim(),
-          depth: depthInput.value,
-          direction: directionSelect.value,
-          snapshot: snapshotSelect.value,
-        });
-        graphSummary.textContent = 'ロード中...';
-        lastUpdated.textContent = '';
-        try {
-          const data = await fetchJson(`/api/graph?${params.toString()}`);
-          renderGraph(data);
-          lastUpdated.textContent = `last updated ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value}`;
-        } catch (error) {
-          graphSummary.textContent = `エラー: ${error.message}`;
-        }
-      }
-
-      async function loadAllGraph() {
-        const params = new URLSearchParams();
-        if (snapshotSelect.value) params.set('snapshot', snapshotSelect.value);
-        graphSummary.textContent = '全体のグラフをロード中...';
-        lastUpdated.textContent = '';
-        try {
-          const query = params.toString();
-          const url = query ? `/api/graph/all?${query}` : '/api/graph/all';
-          const data = await fetchJson(url);
-          renderGraph(data);
-          lastUpdated.textContent = `full graph loaded ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value}`;
-        } catch (error) {
-          graphSummary.textContent = `エラー: ${error.message}`;
-        }
-      }
-
       async function loadHealth() {
         try {
           const data = await fetchJson('/api/health');
-          updateHealth(data);
+          updateHealth({ ok: data.status === 'ok', env: 'api' });
         } catch (error) {
           updateHealth({ ok: false });
         }
@@ -1187,9 +1231,25 @@
         }
       }
 
-      loadGraphBtn.addEventListener('click', loadGraph);
-      loadAllGraphBtn.addEventListener('click', loadAllGraph);
-      resetViewBtn.addEventListener('click', () => {
+      async function loadNeo4jDefaults() {
+        try {
+          const data = await fetchJson('/api/neo4j-config');
+          defaultNeo4jConfig = {
+            uri: data.uri || '',
+            user: data.user || '',
+            password: data.password || '',
+          };
+
+          if (defaultNeo4jConfig.uri && !neo4jUriInput.value) neo4jUriInput.value = defaultNeo4jConfig.uri;
+          if (defaultNeo4jConfig.user && !neo4jUserInput.value) neo4jUserInput.value = defaultNeo4jConfig.user;
+          if (defaultNeo4jConfig.password && !neo4jPasswordInput.value) neo4jPasswordInput.value = defaultNeo4jConfig.password;
+          connectionHint.textContent = '接続設定を上書きする場合はフォームから入力してください。';
+        } catch (_error) {
+          connectionHint.textContent = '接続設定の読み込みに失敗しました。手動で入力してください。';
+        }
+      }
+
+      function resetFilters() {
         rootInput.value = 'gold-mart';
         depthInput.value = 10;
         directionSelect.value = 'both';
@@ -1198,7 +1258,11 @@
         applySearchHighlight('');
         searchResults.textContent = '検索キーワードを2文字以上入力すると候補を表示します。';
         searchSuggestions.innerHTML = '';
-      });
+      }
+
+      loadGraphBtn.addEventListener('click', loadGraph);
+      loadAllGraphBtn.addEventListener('click', loadAllGraph);
+      resetViewBtn.addEventListener('click', resetFilters);
       searchInput.addEventListener('input', (event) => {
         const value = event.target.value;
         applySearchHighlight(value);
@@ -1210,10 +1274,12 @@
       closeFlyout.addEventListener('click', () => renderDetails(null));
 
       (async function init() {
+        await loadNeo4jDefaults();
         await loadSnapshots();
         await loadHealth();
         await loadGraph();
       })();
     </script>
+
   </body>
 </html>
