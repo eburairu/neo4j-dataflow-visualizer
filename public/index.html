@@ -1253,7 +1253,7 @@
 
         const circle = nodeGroup
           .append('circle')
-          .attr('r', 16)
+          .attr('r', (d) => sizeForNode(d))
           .attr('fill', (d) => colorForNode(d))
           .attr('stroke', '#0b1220')
           .attr('stroke-width', 1)
@@ -1271,9 +1271,18 @@
 
         fallbackSimulation = d3
           .forceSimulation(nodes)
-          .force('link', d3.forceLink(links).id((d) => d.id).distance(140))
-          .force('charge', d3.forceManyBody().strength(-550))
-          .force('collide', d3.forceCollide().radius((d) => sizeForNode(d) + 14))
+          .force('link',
+            d3
+              .forceLink(links)
+              .id((d) => d.id)
+              .distance((d) => 140 + sizeForNode(d.source) * 0.8 + sizeForNode(d.target) * 0.8)
+              .strength(0.9)
+          )
+          .force(
+            'charge',
+            d3.forceManyBody().strength(-900).distanceMin(80).distanceMax(Math.max(width, height))
+          )
+          .force('collide', d3.forceCollide().radius((d) => sizeForNode(d) + 22).iterations(2))
           .force('x', d3.forceX(width / 2).strength(0.06))
           .force('y', d3.forceY(height / 2).strength(0.06))
           .force('center', d3.forceCenter(width / 2, height / 2));
