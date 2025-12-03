@@ -646,7 +646,7 @@
       }
 
       async function fetchJson(url) {
-        const res = await fetch(url);
+        const res = await fetch(url, { credentials: 'include' });
         if (!res.ok) {
           const text = await res.text();
           throw new Error(`HTTP ${res.status}: ${text}`);
@@ -1359,23 +1359,35 @@
         renderWithCypher(cypher, params);
       }
 
+      const FALLBACK_SNAPSHOTS = [
+        '2024-01-01T00:00:00Z',
+        '2024-02-01T00:00:00Z',
+        '2024-03-01T00:00:00Z',
+      ];
+
+      function populateSnapshotSelects(snapshots) {
+        [snapshotSelect, baseSnapshot, targetSnapshot].forEach((select) => {
+          select.innerHTML = '';
+          snapshots.forEach((snap, idx) => {
+            const option = document.createElement('option');
+            option.value = snap;
+            option.textContent = snap;
+            if (idx === snapshots.length - 1 && select === snapshotSelect) option.selected = true;
+            select.appendChild(option);
+          });
+        });
+      }
+
       async function loadSnapshots() {
         try {
           const data = await fetchJson('/api/snapshots');
           const snapshots = data.snapshots || [];
-          [snapshotSelect, baseSnapshot, targetSnapshot].forEach((select) => {
-            select.innerHTML = '';
-            snapshots.forEach((snap, idx) => {
-              const option = document.createElement('option');
-              option.value = snap;
-              option.textContent = snap;
-              if (idx === snapshots.length - 1 && select === snapshotSelect) option.selected = true;
-              select.appendChild(option);
-            });
-          });
+          if (!snapshots.length) throw new Error('no snapshots available');
+          populateSnapshotSelects(snapshots);
           lastUpdated.textContent = `Snapshots: ${snapshots.join(' / ')}`;
         } catch (error) {
-          lastUpdated.textContent = `スナップショット取得に失敗しました: ${error.message}`;
+          populateSnapshotSelects(FALLBACK_SNAPSHOTS);
+          lastUpdated.textContent = `サンプルスナップショットを使用しています (理由: ${error.message})`;
         }
       }
 
