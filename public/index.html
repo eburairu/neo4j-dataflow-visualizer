@@ -1221,7 +1221,16 @@
         fallbackSvg.selectAll('*').remove();
         if (fallbackSimulation) fallbackSimulation.stop();
 
-        const link = fallbackSvg
+        const canvas = fallbackSvg.append('g').attr('class', 'graph-canvas');
+        const zoom = d3
+          .zoom()
+          .scaleExtent([0.3, 3])
+          .on('zoom', (event) => {
+            canvas.attr('transform', event.transform);
+          });
+        fallbackSvg.call(zoom);
+
+        const link = canvas
           .append('g')
           .attr('stroke', '#4b5563')
           .attr('stroke-opacity', 0.7)
@@ -1234,7 +1243,7 @@
             highlightEdgeById(d.id);
           });
 
-        const nodeGroup = fallbackSvg
+        const nodeGroup = canvas
           .append('g')
           .selectAll('g')
           .data(nodes)
@@ -1264,6 +1273,9 @@
           .forceSimulation(nodes)
           .force('link', d3.forceLink(links).id((d) => d.id).distance(140))
           .force('charge', d3.forceManyBody().strength(-550))
+          .force('collide', d3.forceCollide().radius((d) => sizeForNode(d) + 14))
+          .force('x', d3.forceX(width / 2).strength(0.06))
+          .force('y', d3.forceY(height / 2).strength(0.06))
           .force('center', d3.forceCenter(width / 2, height / 2));
 
         fallbackSimulation.on('tick', () => {
@@ -1275,6 +1287,31 @@
 
           nodeGroup.attr('transform', (d) => `translate(${d.x}, ${d.y})`);
         });
+
+        const fitToView = () => {
+          if (!nodes.length) return;
+          const bounds = canvas.node().getBBox();
+          const padding = 80;
+          const fullWidth = width;
+          const fullHeight = height;
+          const adjustedWidth = Math.max(bounds.width, 1) + padding;
+          const adjustedHeight = Math.max(bounds.height, 1) + padding;
+          const scale = Math.max(
+            0.35,
+            Math.min(2.5, Math.min(fullWidth / adjustedWidth, fullHeight / adjustedHeight) * 0.9)
+          );
+          const translate = [
+            fullWidth / 2 - scale * (bounds.x + bounds.width / 2),
+            fullHeight / 2 - scale * (bounds.y + bounds.height / 2),
+          ];
+
+          fallbackSvg
+            .transition()
+            .duration(450)
+            .call(zoom.transform, d3.zoomIdentity.translate(...translate).scale(scale));
+        };
+
+        fallbackSimulation.on('end', fitToView);
 
         graphSummary.textContent = `ノード ${nodes.length} 件 / エッジ ${links.length} 件 (サンプル)`;
         lastUpdated.textContent = `last updated ${new Date().toLocaleTimeString()} / snapshot ${snapshotSelect.value || 'sample'}`;
