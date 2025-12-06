@@ -9,7 +9,7 @@
   <style>
     /* Base layout */
     :root {
-      --panel-width: 320px;
+      --panel-width: 260px;
     }
 
     * {
@@ -48,16 +48,16 @@
 
     main {
       flex: 1;
-      display: flex;
-      flex-direction: row;
+      display: grid;
+      grid-template-columns: minmax(240px, 320px) 1fr;
       min-height: 0; /* allow children to size correctly */
     }
 
     #control-panel {
       width: var(--panel-width);
-      max-width: 360px;
-      min-width: 300px;
-      padding: 16px;
+      max-width: 320px;
+      min-width: 240px;
+      padding: 14px 16px;
       background: #ffffff;
       border-right: 1px solid #e0e6ed;
       display: flex;
@@ -117,6 +117,16 @@
       transform: translateY(1px);
     }
 
+    .secondary-button {
+      background: #e7eef7;
+      color: #0b6bcb;
+      border: 1px solid #cdd7e3;
+    }
+
+    .secondary-button:hover {
+      background: #dbe6f3;
+    }
+
     #status-container {
       display: flex;
       flex-direction: column;
@@ -148,17 +158,32 @@
       flex: 1;
       width: 100%;
       background: #ffffff;
-      min-height: 360px;
+      min-height: 420px;
       height: 100%;
+    }
+
+    details {
+      border: 1px solid #cdd7e3;
+      border-radius: 6px;
+      padding: 8px 10px;
+      background: #f9fbfd;
+    }
+
+    summary {
+      font-weight: 700;
+      cursor: pointer;
+      outline: none;
+    }
+
+    summary:focus-visible {
+      outline: 2px solid #0b6bcb;
+      outline-offset: 4px;
     }
 
     /* Responsive tweaks */
     @media (max-width: 900px) {
-      body {
-        height: auto;
-      }
-
       main {
+        display: flex;
         flex-direction: column;
       }
 
@@ -184,7 +209,10 @@
       button {
         width: 100%;
       }
-    }
+
+      #viz {
+        min-height: 60vh;
+      }
     }
   </style>
 </head>
@@ -195,18 +223,21 @@
   </header>
   <main>
     <section id="control-panel" aria-label="Connection and Query Panel">
-      <div>
-        <label for="uri">AuraDB URI</label>
-        <input id="uri" type="text" placeholder="neo4j+s://xxxx.databases.neo4j.io" />
-      </div>
-      <div>
-        <label for="user">Username</label>
-        <input id="user" type="text" />
-      </div>
-      <div>
-        <label for="password">Password</label>
-        <input id="password" type="password" />
-      </div>
+      <details id="credentials" open>
+        <summary>認証情報（実行後は折りたたみ可能）</summary>
+        <div>
+          <label for="uri">AuraDB URI</label>
+          <input id="uri" type="text" placeholder="neo4j+s://xxxx.databases.neo4j.io" />
+        </div>
+        <div>
+          <label for="user">Username</label>
+          <input id="user" type="text" />
+        </div>
+        <div>
+          <label for="password">Password</label>
+          <input id="password" type="password" />
+        </div>
+      </details>
       <div>
         <label for="cypher">Cypher Query</label>
         <textarea id="cypher">MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100;</textarea>
@@ -225,6 +256,9 @@
   <script>
     // NeoVis instance reference
     let viz;
+
+    // UI references for folding credentials
+    const credentialsSection = document.getElementById('credentials');
 
     /**
      * Append a timestamped log message to the status panel.
@@ -336,6 +370,11 @@
         logStatus('Connecting to Neo4j AuraDB and rendering graph...');
         await viz.renderWithCypher(cypher);
         logStatus('Render completed.');
+
+        // 認証情報は実行後不要なので自動的に畳む
+        if (credentialsSection) {
+          credentialsSection.open = false;
+        }
       } catch (e) {
         console.error(e);
         logStatus('エラー: ' + e.message);
@@ -348,6 +387,7 @@
 
     // Bind run handler
     document.getElementById('runBtn').addEventListener('click', run);
+
   </script>
 </body>
 </html>
