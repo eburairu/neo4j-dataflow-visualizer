@@ -202,23 +202,38 @@
     }
 
     /**
-     * Normalize Neo4j Aura secure schemes to avoid duplicate encryption
-     * configuration (URL + driver config) that triggers driver errors.
+     * Normalize the user-supplied Aura URI without setting any encryption
+     * options in driverConfig to avoid "Encryption/trust configured twice"
+     * errors. If an Aura host is provided without a secure scheme, upgrade
+     * it to `neo4j+s://` so TLS is still used.
      * @param {string} rawUri
      * @returns {{serverUrl: string, driverConfig: object}}
      */
     function normalizeAuraUri(rawUri) {
-      const lower = rawUri.toLowerCase();
+      const trimmed = rawUri.trim();
 
-      // If the URI already encodes encryption (neo4j+s / neo4j+ssc), avoid
-      // specifying encryption/trust in the driver config to prevent the driver
-      // from seeing duplicate settings (URL + config), which triggers
-      // "Encryption/trust can only be configured either through URL or config, not both".
-      if (lower.startsWith('neo4j+s://') || lower.startsWith('neo4j+ssc://')) {
-        return { serverUrl: rawUri, driverConfig: {} };
+      // Keep secure schemes as-is but avoid duplicating encryption config.
+      const securePattern = /^(neo4j|bolt)\+ss?c?:\/\//i;
+      if (securePattern.test(trimmed)) {
+        return { serverUrl: trimmed, driverConfig: {} };
       }
 
-      return { serverUrl: rawUri, driverConfig: {} };
+      try {
+        const url = new URL(trimmed);
+        const hostname = url.hostname?.toLowerCase();
+        const isAuraHost = hostname.endsWith('.databases.neo4j.io');
+        const protocol = url.protocol.replace(':', '').toLowerCase();
+
+        if (isAuraHost && (protocol === 'neo4j' || protocol === 'bolt')) {
+          const upgraded = trimmed.replace(/^(neo4j|bolt):\/\//i, 'neo4j+s://');
+          logStatus(`Aura host detected。安全なスキームに変換しました: ${upgraded}`);
+          return { serverUrl: upgraded, driverConfig: {} };
+        }
+      } catch (e) {
+        // If the URL constructor fails, fall through and use the raw value.
+      }
+
+      return { serverUrl: trimmed, driverConfig: {} };
     }
 
     /**
@@ -243,19 +258,14 @@
 
         const { serverUrl, driverConfig } = normalizeAuraUri(uri);
 
-        const neo4jConfig = {
-          serverUrl,
-          serverUser: user,
-          serverPassword: password,
-        };
-
-        if (driverConfig && Object.keys(driverConfig).length > 0) {
-          neo4jConfig.driverConfig = driverConfig;
-        }
-
         const config = {
           containerId: 'viz',
-          neo4j: neo4jConfig,
+          neo4j: {
+            serverUrl,
+            serverUser: user,
+            serverPassword: password,
+            driverConfig,
+          },
           labels: {},
           relationships: {},
           visConfig: {
