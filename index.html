@@ -395,6 +395,13 @@
           labels: {},
           relationships: {},
           visConfig: {
+            layout: {
+              hierarchical: {
+                enabled: true,
+                direction: 'LR',
+                sortMethod: 'directed',
+              },
+            },
             nodes: {
               shape: 'dot',
               size: 16,
@@ -405,7 +412,11 @@
               },
             },
             physics: {
-              enabled: true,
+              enabled: false,
+              hierarchicalRepulsion: {
+                nodeDistance: 180,
+                avoidOverlap: 1,
+              },
             },
           },
         };
