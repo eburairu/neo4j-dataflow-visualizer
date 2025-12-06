@@ -202,6 +202,75 @@
       color: #2f3b4c;
     }
 
+    /* Relationship popover */
+    #relationship-popover {
+      position: fixed;
+      max-width: 320px;
+      min-width: 240px;
+      padding: 12px 14px;
+      background: #0b2948;
+      color: #f8fafc;
+      border-radius: 10px;
+      box-shadow: 0 8px 30px rgba(15, 23, 42, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      transform: translate(-50%, 8px);
+      z-index: 20;
+    }
+
+    #relationship-popover[hidden] {
+      display: none;
+    }
+
+    #relationship-popover header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      padding: 0;
+      background: none;
+      box-shadow: none;
+      color: inherit;
+    }
+
+    #relationship-popover h3 {
+      margin: 0;
+      font-size: 15px;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #relationship-popover .close-btn {
+      background: transparent;
+      color: inherit;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      padding: 4px 6px;
+      min-width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      font-size: 13px;
+    }
+
+    #relationship-popover dl {
+      margin: 0;
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 6px 10px;
+      font-size: 13px;
+    }
+
+    #relationship-popover dt {
+      opacity: 0.85;
+    }
+
+    #relationship-popover dd {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
     #viz-container {
       flex: 1;
       min-width: 0;
@@ -411,6 +480,34 @@
           </div>
         </dl>
       </aside>
+      <div id="relationship-popover" hidden>
+        <header>
+          <h3>Relationship</h3>
+          <button id="close-relationship-popover" class="close-btn" type="button">Close</button>
+        </header>
+        <dl>
+          <div class="detail-row">
+            <dt>Type</dt>
+            <dd id="relationship-type">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>Direction</dt>
+            <dd id="relationship-direction">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>From</dt>
+            <dd id="relationship-from">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>To</dt>
+            <dd id="relationship-to">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>Attributes</dt>
+            <dd id="relationship-properties">-</dd>
+          </div>
+        </dl>
+      </div>
     </section>
   </main>
 
@@ -419,6 +516,8 @@
     let viz;
     let selectedNode = null;
     let selectionHandler = null;
+    let selectedRelationship = null;
+    let relationshipPopoverPosition = null;
     let originalNodes = [];
     let originalEdges = [];
     let searchQuery = '';
@@ -428,6 +527,13 @@
     const searchInput = document.getElementById('graph-search');
     const searchFeedback = document.getElementById('search-feedback');
     const searchClearButton = document.getElementById('search-clear');
+    const relationshipPopover = document.getElementById('relationship-popover');
+    const closeRelationshipPopoverBtn = document.getElementById('close-relationship-popover');
+    const relationshipTypeEl = document.getElementById('relationship-type');
+    const relationshipDirectionEl = document.getElementById('relationship-direction');
+    const relationshipFromEl = document.getElementById('relationship-from');
+    const relationshipToEl = document.getElementById('relationship-to');
+    const relationshipPropsEl = document.getElementById('relationship-properties');
 
     /**
      * Append a timestamped log message to the status panel.
@@ -462,6 +568,7 @@
       propsEl.textContent = formatProperties(nodeData.properties);
 
       panel.hidden = false;
+      hideRelationshipPopover();
     }
 
     function clearNodeDetails() {
@@ -492,6 +599,75 @@
         .join('\n');
     }
 
+    function formatRelationshipData(edgeData) {
+      if (!edgeData) {
+        return {
+          type: '-',
+          direction: '-',
+          from: '-',
+          to: '-',
+          properties: '-',
+        };
+      }
+
+      return {
+        type: edgeData.type || edgeData.label || edgeData.caption || 'Relationship',
+        direction: edgeData.direction || `${edgeData.from ?? '?'} → ${edgeData.to ?? '?'}`,
+        from: edgeData.from ?? '-',
+        to: edgeData.to ?? '-',
+        properties: formatProperties(edgeData.properties),
+      };
+    }
+
+    function hideRelationshipPopover() {
+      selectedRelationship = null;
+      relationshipPopoverPosition = null;
+      if (relationshipPopover) {
+        relationshipPopover.hidden = true;
+      }
+    }
+
+    function showRelationshipPopover(edgeData, pointerDom) {
+      if (!relationshipPopover || !edgeData) return;
+
+      selectedRelationship = edgeData;
+      const fallbackPosition = {
+        x: window.innerWidth / 2,
+        y: window.innerHeight / 2,
+      };
+      relationshipPopoverPosition = pointerDom || relationshipPopoverPosition || fallbackPosition;
+
+      const formatted = formatRelationshipData(edgeData);
+      relationshipTypeEl.textContent = formatted.type;
+      relationshipDirectionEl.textContent = formatted.direction;
+      relationshipFromEl.textContent = formatted.from;
+      relationshipToEl.textContent = formatted.to;
+      relationshipPropsEl.textContent = formatted.properties;
+
+      if (relationshipPopoverPosition) {
+        relationshipPopover.style.left = `${relationshipPopoverPosition.x}px`;
+        relationshipPopover.style.top = `${relationshipPopoverPosition.y}px`;
+      }
+
+      relationshipPopover.hidden = false;
+    }
+
+    function normalizeRelationshipEdge(edge) {
+      if (!edge || typeof edge !== 'object') return edge;
+      return {
+        ...edge,
+        type: edge.type || edge.label || edge.caption || edge.relationshipType || 'Relationship',
+        direction: edge.direction || `${edge.from ?? '?'} → ${edge.to ?? '?'}`,
+        properties: edge.properties || edge.data || edge.attributes || {},
+      };
+    }
+
+    function prepareRelationshipData() {
+      if (!viz?._data?.edges) return;
+      const normalized = viz._data.edges.get().map(normalizeRelationshipEdge);
+      viz._data.edges.update(normalized);
+    }
+
     function bindNodeSelection() {
       if (!viz || !viz._network) return;
 
@@ -501,12 +677,24 @@
       }
 
       selectionHandler = (params) => {
+        const pointerDom = params?.pointer?.DOM;
+
+        if (params?.edges?.length) {
+          const edgeId = params.edges[0];
+          const edgeData = viz?._data?.edges?.get?.(edgeId);
+          if (edgeData) {
+            showRelationshipPopover(edgeData, pointerDom);
+          }
+          return;
+        }
+
         if (params?.nodes?.length) {
           const nodeId = params.nodes[0];
           const nodeData = viz?._data?.nodes?.get?.(nodeId) || { id: nodeId };
           showNodeDetails(nodeData);
         } else {
           clearNodeDetails();
+          hideRelationshipPopover();
         }
       };
 
@@ -530,6 +718,14 @@
       updateSearchFeedback('検索未実行', 'info');
       searchQuery = '';
       if (searchInput) searchInput.value = '';
+      if (selectedRelationship) {
+        const restored = viz._data.edges.get().find((edge) => edge.id === selectedRelationship.id);
+        if (restored) {
+          showRelationshipPopover(restored, relationshipPopoverPosition);
+        } else {
+          hideRelationshipPopover();
+        }
+      }
     }
 
     function updateSearchFeedback(message, tone = 'info') {
@@ -609,6 +805,15 @@
       viz._data.nodes.add(filteredNodes);
       viz._data.edges.add(filteredEdges);
 
+      if (selectedRelationship) {
+        const filteredEdge = filteredEdges.find((edge) => edge.id === selectedRelationship.id);
+        if (filteredEdge && !filteredEdge.hidden) {
+          showRelationshipPopover(filteredEdge, relationshipPopoverPosition);
+        } else {
+          hideRelationshipPopover();
+        }
+      }
+
       const hitCount = matchedNodeIds.size + matchedEdgeIds.size;
       if (hitCount === 0) {
         updateSearchFeedback('該当なし：条件に一致するノード/リレーションはありません。', 'warn');
@@ -677,6 +882,7 @@
         runButton.disabled = true;
         runButton.textContent = 'Running...';
         clearNodeDetails();
+        hideRelationshipPopover();
 
         // Clear previous visualization if it exists
         if (viz && typeof viz.clearNetwork === 'function') {
@@ -727,6 +933,7 @@
         await viz.renderWithCypher(cypher);
         logStatus('Render completed.');
 
+        prepareRelationshipData();
         bindNodeSelection();
         captureOriginalData();
         updateSearchFeedback('検索未実行', 'info');
@@ -758,6 +965,15 @@
     if (searchClearButton) {
       searchClearButton.addEventListener('click', () => {
         restoreGraph();
+      });
+    }
+
+    if (closeRelationshipPopoverBtn) {
+      closeRelationshipPopoverBtn.addEventListener('click', () => {
+        hideRelationshipPopover();
+        if (viz?._network) {
+          viz._network.unselectAll();
+        }
       });
     }
 
