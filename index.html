@@ -210,24 +210,12 @@
     function normalizeAuraUri(rawUri) {
       const lower = rawUri.toLowerCase();
 
-      if (lower.startsWith('neo4j+s://')) {
-        return {
-          serverUrl: rawUri.replace(/^neo4j\+s:\/\//i, 'neo4j://'),
-          driverConfig: {
-            encrypted: 'ENCRYPTION_ON',
-            trust: 'TRUST_SYSTEM_CA_SIGNED_CERTIFICATES',
-          },
-        };
-      }
-
-      if (lower.startsWith('neo4j+ssc://')) {
-        return {
-          serverUrl: rawUri.replace(/^neo4j\+ssc:\/\//i, 'neo4j://'),
-          driverConfig: {
-            encrypted: 'ENCRYPTION_ON',
-            trust: 'TRUST_ALL_CERTIFICATES',
-          },
-        };
+      // If the URI already encodes encryption (neo4j+s / neo4j+ssc), avoid
+      // specifying encryption/trust in the driver config to prevent the driver
+      // from seeing duplicate settings (URL + config), which triggers
+      // "Encryption/trust can only be configured either through URL or config, not both".
+      if (lower.startsWith('neo4j+s://') || lower.startsWith('neo4j+ssc://')) {
+        return { serverUrl: rawUri, driverConfig: {} };
       }
 
       return { serverUrl: rawUri, driverConfig: {} };
@@ -255,14 +243,19 @@
 
         const { serverUrl, driverConfig } = normalizeAuraUri(uri);
 
+        const neo4jConfig = {
+          serverUrl,
+          serverUser: user,
+          serverPassword: password,
+        };
+
+        if (driverConfig && Object.keys(driverConfig).length > 0) {
+          neo4jConfig.driverConfig = driverConfig;
+        }
+
         const config = {
           containerId: 'viz',
-          neo4j: {
-            serverUrl,
-            serverUser: user,
-            serverPassword: password,
-            driverConfig,
-          },
+          neo4j: neo4jConfig,
           labels: {},
           relationships: {},
           visConfig: {
