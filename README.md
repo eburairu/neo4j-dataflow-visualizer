@@ -13,17 +13,34 @@ Neo4j をバックエンドに IDMC CDI パイプラインの依存関係を可�
    # 必要に応じて NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD を変更
    ```
 
+### Neo4j コンテナの起動とサンプルデータ投入
+1. Neo4j を Docker で起動します（デフォルトのパスワードは `password`）。
+   ```bash
+   docker compose -f docker-compose.neo4j.yml up -d
+   ```
+2. `.env` の Neo4j 接続情報を起動したコンテナに合わせます。
+   ```bash
+   # 例: docker-compose.neo4j.yml の設定に合わせる
+   NEO4J_URI=bolt://localhost:7687
+   NEO4J_USER=neo4j
+   NEO4J_PASSWORD=password
+   ```
+3. コンテナが起動したらサンプルデータを Neo4j に投入します。2 つのスナップショット（2024-01-01 / 2024-02-01）が作成され、Web UI から取得できます。
+   ```bash
+   npm run seed:neo4j
+   ```
+
 ## 実行
 ```bash
 npm start
 ```
 
-起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。`/` へアクセスした場合は `/api/health` へリダイレクトされます。
+起動後は `http://localhost:4000/api/health` でヘルスチェックができます。Neo4j 接続が未設定の場合はサンプルスナップショット（メダリオン Bronze/Silver/Gold の例）で応答します。`/` へアクセスした場合は `/api/health` へリダイレクトされます。Neo4j に接続している場合、Web UI の各 API で投入済みスナップショットデータをそのまま参照できます。
 
 ### データフロー可視化 UI へのアクセス
 - `npm start` でサーバーを立ち上げた後、ブラウザから `http://localhost:4000/` にアクセスすると、API の疎通確認とサンプルリクエストを実行できるミニ UI（`public/index.html`）が表示されます。
 - 画面には「ヘルスチェック」「スナップショット一覧」「グラフ取得」「差分比較」のパネルがあり、各ボタン・フォームから `/api/health` `/api/snapshots` `/api/graph` `/api/diff` を呼び出して結果を即座に確認できます。
-- Neo4j を未設定の場合でも、サンプルスナップショットを使ってレスポンスを返すため、ローカル環境のみで UI の動作を確認できます。接続先 Neo4j を利用する場合は `.env` に `NEO4J_URI` などを設定した上で同じ手順でアクセスしてください。
+- Neo4j を未設定の場合でも、サンプルスナップショットを使ってレスポンスを返すため、ローカル環境のみで UI の動作を確認できます。接続先 Neo4j を利用する場合は `.env` に `NEO4J_URI` などを設定した上で同じ手順でアクセスしてください。ブラウザを開いた直後からサンプルグラフが描画され、接続設定が無くても画面上で依存関係を確認できます。
 
 ## 提供 API（MVP）
 - `GET /api/graph?rootId=<id>&depth=2&direction=both&snapshot=2024-02-01T00:00:00Z`
