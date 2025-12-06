@@ -175,6 +175,7 @@
       display: flex;
       flex-direction: column;
       height: 100%;
+      position: relative;
     }
 
     #viz {
@@ -183,6 +184,64 @@
       background: #ffffff;
       min-height: 420px;
       height: 100%;
+    }
+
+    #node-details-panel {
+      position: absolute;
+      right: 16px;
+      top: 16px;
+      width: 280px;
+      background: #ffffff;
+      border: 1px solid #e0e6ed;
+      border-radius: 10px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 10;
+    }
+
+    #node-details-panel dl {
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #node-details-panel dt {
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 2px;
+    }
+
+    #node-details-panel dd {
+      margin: 0;
+      font-size: 14px;
+      word-break: break-word;
+      background: #f9fbfd;
+      border: 1px solid #e0e6ed;
+      border-radius: 6px;
+      padding: 8px;
+      white-space: pre-wrap;
+    }
+
+    #node-details-panel .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    #node-details-panel h2 {
+      margin: 0;
+      font-size: 16px;
+      letter-spacing: 0.2px;
+    }
+
+    #node-details-panel .detail-row {
+      display: flex;
+      flex-direction: column;
     }
 
     details {
@@ -275,12 +334,34 @@
     </section>
     <section id="viz-container" aria-label="Visualization Area">
       <div id="viz"></div>
+      <aside id="node-details-panel" aria-live="polite" hidden>
+        <div class="panel-header">
+          <h2>Selected Node</h2>
+          <button id="close-node-details" class="secondary-button" type="button">Clear</button>
+        </div>
+        <dl>
+          <div class="detail-row">
+            <dt>ID</dt>
+            <dd id="node-id">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>Label</dt>
+            <dd id="node-label">-</dd>
+          </div>
+          <div class="detail-row">
+            <dt>Properties</dt>
+            <dd id="node-properties">-</dd>
+          </div>
+        </dl>
+      </aside>
     </section>
   </main>
 
   <script>
     // NeoVis instance reference
     let viz;
+    let selectedNode = null;
+    let selectionHandler = null;
 
     // UI references for folding credentials
     const credentialsSection = document.getElementById('credentials');
@@ -296,6 +377,77 @@
       entry.textContent = `[${time}] ${message}`;
       statusEl.appendChild(entry);
       statusEl.scrollTop = statusEl.scrollHeight;
+    }
+
+    /**
+     * Render selected node details into the panel.
+     * @param {{id: string|number, label?: string, labels?: string[], properties?: object}} nodeData
+     */
+    function showNodeDetails(nodeData) {
+      selectedNode = nodeData;
+      const panel = document.getElementById('node-details-panel');
+      const idEl = document.getElementById('node-id');
+      const labelEl = document.getElementById('node-label');
+      const propsEl = document.getElementById('node-properties');
+
+      const labelText = (nodeData.labels && nodeData.labels.length)
+        ? nodeData.labels.join(', ')
+        : nodeData.label || '-';
+
+      idEl.textContent = nodeData.id ?? '-';
+      labelEl.textContent = labelText;
+      propsEl.textContent = formatProperties(nodeData.properties);
+
+      panel.hidden = false;
+    }
+
+    function clearNodeDetails() {
+      selectedNode = null;
+      const panel = document.getElementById('node-details-panel');
+      const idEl = document.getElementById('node-id');
+      const labelEl = document.getElementById('node-label');
+      const propsEl = document.getElementById('node-properties');
+
+      idEl.textContent = '-';
+      labelEl.textContent = '-';
+      propsEl.textContent = '-';
+      panel.hidden = true;
+    }
+
+    function formatProperties(properties) {
+      if (!properties || typeof properties !== 'object') {
+        return '-';
+      }
+
+      const entries = Object.entries(properties);
+      if (entries.length === 0) {
+        return '-';
+      }
+
+      return entries
+        .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+        .join('\n');
+    }
+
+    function bindNodeSelection() {
+      if (!viz || !viz._network) return;
+
+      const network = viz._network;
+      if (selectionHandler) {
+        network.off('click', selectionHandler);
+      }
+
+      selectionHandler = (params) => {
+        if (params?.nodes?.length) {
+          const nodeId = params.nodes[0];
+          const nodeData = viz?._data?.nodes?.get?.(nodeId) || { id: nodeId };
+          showNodeDetails(nodeData);
+        } else {
+          clearNodeDetails();
+        }
+      };
+
+      network.on('click', selectionHandler);
     }
 
     /**
@@ -357,6 +509,7 @@
       try {
         runButton.disabled = true;
         runButton.textContent = 'Running...';
+        clearNodeDetails();
 
         // Clear previous visualization if it exists
         if (viz && typeof viz.clearNetwork === 'function') {
@@ -407,6 +560,8 @@
         await viz.renderWithCypher(cypher);
         logStatus('Render completed.');
 
+        bindNodeSelection();
+
         // 認証情報は実行後不要なので自動的に畳む
         if (credentialsSection) {
           credentialsSection.open = false;
@@ -423,6 +578,14 @@
 
     // Bind run handler
     document.getElementById('runBtn').addEventListener('click', run);
+
+    // Bind clear handler for node details panel
+    document.getElementById('close-node-details').addEventListener('click', () => {
+      clearNodeDetails();
+      if (viz?._network) {
+        viz._network.unselectAll();
+      }
+    });
 
   </script>
 </body>
