@@ -211,11 +211,18 @@
      */
     function normalizeAuraUri(rawUri) {
       const trimmed = rawUri.trim();
+      const driverConfig = {
+        encrypted: 'ENCRYPTION_ON',
+        trust: 'TRUST_SYSTEM_CA_SIGNED_CERTIFICATES',
+      };
 
-      // Keep secure schemes as-is but avoid duplicating encryption config.
+      // Move any encryption/trust directives from the URI into driverConfig to
+      // avoid the "Encryption/trust configured twice" error.
       const securePattern = /^(neo4j|bolt)\+ss?c?:\/\//i;
       if (securePattern.test(trimmed)) {
-        return { serverUrl: trimmed, driverConfig: {} };
+        const normalizedUri = trimmed.replace(/^(neo4j|bolt)\+ss?c?:\/\//i, '$1://');
+        logStatus('暗号化設定をURLからdriverConfigに移動しました。');
+        return { serverUrl: normalizedUri, driverConfig };
       }
 
       try {
@@ -225,15 +232,14 @@
         const protocol = url.protocol.replace(':', '').toLowerCase();
 
         if (isAuraHost && (protocol === 'neo4j' || protocol === 'bolt')) {
-          const upgraded = trimmed.replace(/^(neo4j|bolt):\/\//i, 'neo4j+s://');
-          logStatus(`Aura host detected。安全なスキームに変換しました: ${upgraded}`);
-          return { serverUrl: upgraded, driverConfig: {} };
+          logStatus('Auraホストに接続します。暗号化はdriverConfigに設定します。');
+          return { serverUrl: trimmed, driverConfig };
         }
       } catch (e) {
         // If the URL constructor fails, fall through and use the raw value.
       }
 
-      return { serverUrl: trimmed, driverConfig: {} };
+      return { serverUrl: trimmed, driverConfig };
     }
 
     /**
