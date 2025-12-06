@@ -339,11 +339,19 @@ function normalizeAuraUri(rawUri) {
     const protocol = url.protocol.replace(':', '').toLowerCase();
 
     if (isAuraHost && (protocol === 'neo4j' || protocol === 'bolt')) {
-      logStatus('Auraホストに接続します。暗号化はdriverConfigに設定します。');
-      return { serverUrl: trimmed, driverConfig };
+      const upgraded = `neo4j+s://${url.host}${url.pathname}${url.search}${url.hash}`;
+      logStatus('AuraホストのURIをTLS付きのneo4j+sスキームに自動変換しました。');
+      return { serverUrl: upgraded, driverConfig };
     }
   } catch (e) {
-    // If the URL constructor fails, fall through and use the raw value.
+    // If the URL constructor fails, fall through and check common Aura patterns.
+  }
+
+  // Handle plain Aura hostnames without a scheme (e.g. "xxxx.databases.neo4j.io").
+  const auraHostOnly = /^([\w.-]+\.databases\.neo4j\.io)(?::\d+)?(\/.*)?$/i;
+  if (auraHostOnly.test(trimmed)) {
+    logStatus('Auraホスト名にTLSスキームを追加しました (neo4j+s://)。');
+    return { serverUrl: `neo4j+s://${trimmed}`, driverConfig };
   }
 
   return { serverUrl: trimmed, driverConfig };
