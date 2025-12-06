@@ -1,0 +1,14 @@
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-content > *:last-child {
+  margin-bottom: 0;
+}
+
+.hidden {
+  display: none !important;
+}
