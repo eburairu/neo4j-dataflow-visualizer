@@ -34,6 +34,14 @@
       box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
     }
 
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
     header h1 {
       margin: 0 0 4px;
       font-size: 20px;
@@ -44,6 +52,31 @@
       margin: 0;
       font-size: 13px;
       opacity: 0.85;
+    }
+
+    .search-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .search-bar input[type="search"] {
+      min-width: 220px;
+      background: #f4f7fb;
+      border: 1px solid rgba(255, 255, 255, 0.35);
+      color: #0b2948;
+    }
+
+    .search-bar input[type="search"]::placeholder {
+      color: rgba(11, 41, 72, 0.8);
+    }
+
+    .search-feedback {
+      margin-top: 8px;
+      font-size: 13px;
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 8px 10px;
     }
 
     main {
@@ -269,6 +302,21 @@
         flex-direction: column;
       }
 
+      .header-top {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .search-bar {
+        width: 100%;
+      }
+
+      .search-bar input[type="search"] {
+        flex: 1;
+        min-width: 0;
+        width: 100%;
+      }
+
       #control-panel {
         width: 100%;
         max-width: none;
@@ -300,8 +348,17 @@
 </head>
 <body>
   <header>
-    <h1>Neo4j AuraDB Viewer</h1>
-    <p>GitHub Pages + Browser Only (neovis.js)</p>
+    <div class="header-top">
+      <div>
+        <h1>Neo4j AuraDB Viewer</h1>
+        <p>GitHub Pages + Browser Only (neovis.js)</p>
+      </div>
+      <div class="search-bar" role="search">
+        <input id="graph-search" type="search" placeholder="ノード・リレーションを検索" aria-label="グラフ検索" />
+        <button id="search-clear" class="secondary-button" type="button">Clear</button>
+      </div>
+    </div>
+    <div class="search-feedback" aria-live="polite" id="search-feedback">検索未実行</div>
   </header>
   <main>
     <section id="control-panel" aria-label="Connection and Query Panel">
@@ -362,9 +419,15 @@
     let viz;
     let selectedNode = null;
     let selectionHandler = null;
+    let originalNodes = [];
+    let originalEdges = [];
+    let searchQuery = '';
 
     // UI references for folding credentials
     const credentialsSection = document.getElementById('credentials');
+    const searchInput = document.getElementById('graph-search');
+    const searchFeedback = document.getElementById('search-feedback');
+    const searchClearButton = document.getElementById('search-clear');
 
     /**
      * Append a timestamped log message to the status panel.
@@ -448,6 +511,110 @@
       };
 
       network.on('click', selectionHandler);
+    }
+
+    function captureOriginalData() {
+      if (!viz?._data?.nodes || !viz?._data?.edges) return;
+
+      originalNodes = JSON.parse(JSON.stringify(viz._data.nodes.get()));
+      originalEdges = JSON.parse(JSON.stringify(viz._data.edges.get()));
+    }
+
+    function restoreGraph() {
+      if (!viz?._data?.nodes || !viz?._data?.edges) return;
+
+      viz._data.nodes.clear();
+      viz._data.edges.clear();
+      viz._data.nodes.add(originalNodes);
+      viz._data.edges.add(originalEdges);
+      updateSearchFeedback('検索未実行', 'info');
+      searchQuery = '';
+      if (searchInput) searchInput.value = '';
+    }
+
+    function updateSearchFeedback(message, tone = 'info') {
+      if (!searchFeedback) return;
+      const color = tone === 'warn' ? '#fffbeb' : '#e0f2fe';
+      const textColor = tone === 'warn' ? '#92400e' : '#0b2948';
+      searchFeedback.textContent = message;
+      searchFeedback.style.background = color;
+      searchFeedback.style.color = textColor;
+    }
+
+    function matchesEntity(entity, query) {
+      if (!entity || !query) return false;
+      const target = JSON.stringify(entity).toLowerCase();
+      return target.includes(query.toLowerCase());
+    }
+
+    function applySearchFilter(query) {
+      if (!viz?._data?.nodes || !viz?._data?.edges) {
+        updateSearchFeedback('グラフが読み込まれていません。', 'warn');
+        return;
+      }
+
+      const trimmed = query.trim();
+      if (!trimmed) {
+        restoreGraph();
+        return;
+      }
+
+      searchQuery = trimmed;
+      const matchedNodeIds = new Set();
+      const matchedEdgeIds = new Set();
+      const nodesFromEdges = new Set();
+
+      originalNodes.forEach((node) => {
+        if (matchesEntity(node, trimmed)) {
+          matchedNodeIds.add(node.id);
+        }
+      });
+
+      originalEdges.forEach((edge) => {
+        const edgeMatch = matchesEntity(edge, trimmed);
+        if (edgeMatch) {
+          matchedEdgeIds.add(edge.id ?? `${edge.from}-${edge.to}`);
+          nodesFromEdges.add(edge.from);
+          nodesFromEdges.add(edge.to);
+        }
+
+        if (matchedNodeIds.has(edge.from) || matchedNodeIds.has(edge.to)) {
+          matchedEdgeIds.add(edge.id ?? `${edge.from}-${edge.to}`);
+          nodesFromEdges.add(edge.from);
+          nodesFromEdges.add(edge.to);
+        }
+      });
+
+      const nodesToShow = new Set([...matchedNodeIds, ...nodesFromEdges]);
+      const filteredNodes = originalNodes.map((node) => ({
+        ...node,
+        hidden: !nodesToShow.has(node.id),
+        color: nodesToShow.has(node.id) && matchedNodeIds.has(node.id)
+          ? { background: '#fde68a', border: '#d97706' }
+          : node.color,
+      }));
+
+      const filteredEdges = originalEdges.map((edge) => {
+        const edgeId = edge.id ?? `${edge.from}-${edge.to}`;
+        const isMatch = matchedEdgeIds.has(edgeId);
+        return {
+          ...edge,
+          hidden: !isMatch,
+          color: isMatch ? { color: '#d97706' } : edge.color,
+        };
+      });
+
+      viz._data.nodes.clear();
+      viz._data.edges.clear();
+      viz._data.nodes.add(filteredNodes);
+      viz._data.edges.add(filteredEdges);
+
+      const hitCount = matchedNodeIds.size + matchedEdgeIds.size;
+      if (hitCount === 0) {
+        updateSearchFeedback('該当なし：条件に一致するノード/リレーションはありません。', 'warn');
+      } else {
+        updateSearchFeedback(`ヒット件数: ノード ${matchedNodeIds.size} 件 / リレーション ${matchedEdgeIds.size} 件`);
+      }
     }
 
     /**
@@ -561,6 +728,8 @@
         logStatus('Render completed.');
 
         bindNodeSelection();
+        captureOriginalData();
+        updateSearchFeedback('検索未実行', 'info');
 
         // 認証情報は実行後不要なので自動的に畳む
         if (credentialsSection) {
@@ -578,6 +747,19 @@
 
     // Bind run handler
     document.getElementById('runBtn').addEventListener('click', run);
+
+    // Bind search handlers
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        applySearchFilter(e.target.value);
+      });
+    }
+
+    if (searchClearButton) {
+      searchClearButton.addEventListener('click', () => {
+        restoreGraph();
+      });
+    }
 
     // Bind clear handler for node details panel
     document.getElementById('close-node-details').addEventListener('click', () => {
