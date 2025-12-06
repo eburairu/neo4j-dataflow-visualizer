@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "esbuild src/ui/events.js --bundle --outfile=public/bundle.js --format=iife --platform=browser"
+    "build": "esbuild src/ui/events.js src/styles/index.css --bundle --outdir=public --format=iife --platform=browser --entry-names=bundle"
   },
   "devDependencies": {
     "esbuild": "^0.21.5"
