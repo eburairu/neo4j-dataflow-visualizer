@@ -1,0 +1,11 @@
+{
+  "name": "neo4j-dataflow-visualizer",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/ui/events.js --bundle --outfile=public/bundle.js --format=iife --platform=browser"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5"
+  }
+}
