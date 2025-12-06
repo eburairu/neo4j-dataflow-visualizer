@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neo4j AuraDB Viewer</title>
+  <!-- Load NeoVis from CDN -->
+  <script src="https://unpkg.com/neovis.js@2.0.2/dist/neovis.js"></script>
+  <style>
+    /* Base layout */
+    :root {
+      --panel-width: 320px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #1f2933;
+      background: #f7f9fb;
+    }
+
+    header {
+      padding: 12px 16px;
+      background: #0b6bcb;
+      color: white;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12);
+    }
+
+    header h1 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      letter-spacing: 0.3px;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: row;
+      min-height: 0; /* allow children to size correctly */
+    }
+
+    #control-panel {
+      width: var(--panel-width);
+      max-width: 360px;
+      min-width: 300px;
+      padding: 16px;
+      background: #ffffff;
+      border-right: 1px solid #e0e6ed;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    label {
+      font-weight: 600;
+      font-size: 13px;
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    input[type="text"],
+    input[type="password"],
+    textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #cdd7e3;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #f9fbfd;
+      transition: border-color 0.2s ease;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: none;
+      border-color: #0b6bcb;
+      background: #fff;
+    }
+
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+
+    button {
+      padding: 10px 12px;
+      background: #0b6bcb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.1s ease;
+    }
+
+    button:hover {
+      background: #095cae;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    #status-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    #status {
+      height: 120px;
+      padding: 8px;
+      background: #f1f3f5;
+      border: 1px solid #cdd7e3;
+      border-radius: 6px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.4;
+      font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+      color: #2f3b4c;
+    }
+
+    #viz-container {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+
+    #viz {
+      flex: 1;
+      width: 100%;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Neo4j AuraDB Viewer</h1>
+    <p>GitHub Pages + Browser Only (neovis.js)</p>
+  </header>
+  <main>
+    <section id="control-panel" aria-label="Connection and Query Panel">
+      <div>
+        <label for="uri">AuraDB URI</label>
+        <input id="uri" type="text" placeholder="neo4j+s://xxxx.databases.neo4j.io" />
+      </div>
+      <div>
+        <label for="user">Username</label>
+        <input id="user" type="text" />
+      </div>
+      <div>
+        <label for="password">Password</label>
+        <input id="password" type="password" />
+      </div>
+      <div>
+        <label for="cypher">Cypher Query</label>
+        <textarea id="cypher">MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100;</textarea>
+      </div>
+      <button id="runBtn" type="button">Run &amp; Visualize</button>
+      <div id="status-container">
+        <label for="status">Status / Log</label>
+        <div id="status" aria-live="polite"></div>
+      </div>
+    </section>
+    <section id="viz-container" aria-label="Visualization Area">
+      <div id="viz"></div>
+    </section>
+  </main>
+
+  <script>
+    // NeoVis instance reference
+    let viz;
+
+    /**
+     * Append a timestamped log message to the status panel.
+     * @param {string} message
+     */
+    function logStatus(message) {
+      const statusEl = document.getElementById('status');
+      const time = new Date().toLocaleTimeString();
+      const entry = document.createElement('div');
+      entry.textContent = `[${time}] ${message}`;
+      statusEl.appendChild(entry);
+      statusEl.scrollTop = statusEl.scrollHeight;
+    }
+
+    /**
+     * Create or re-create the visualization based on user input.
+     */
+    function run() {
+      const uri = document.getElementById('uri').value.trim();
+      const user = document.getElementById('user').value.trim();
+      const password = document.getElementById('password').value.trim();
+      const cypher = document.getElementById('cypher').value.trim();
+
+      if (!uri || !user || !password || !cypher) {
+        alert('Please fill in AuraDB URI, Username, Password, and Cypher.');
+        return;
+      }
+
+      try {
+        // Clear previous visualization if it exists
+        if (viz && typeof viz.clearNetwork === 'function') {
+          viz.clearNetwork();
+        }
+
+        const config = {
+          containerId: 'viz',
+          neo4j: {
+            serverUrl: uri,
+            serverUser: user,
+            serverPassword: password,
+          },
+          labels: {},
+          relationships: {},
+          visConfig: {
+            nodes: {
+              shape: 'dot',
+              size: 16,
+            },
+            edges: {
+              arrows: {
+                to: { enabled: true },
+              },
+            },
+            physics: {
+              enabled: true,
+            },
+          },
+          initialCypher: cypher,
+        };
+
+        viz = new NeoVis.default(config);
+        logStatus('Connecting to Neo4j AuraDB and rendering graph...');
+        viz.render();
+        logStatus('Render started.');
+      } catch (e) {
+        console.error(e);
+        logStatus('エラー: ' + e.message);
+        alert('Failed to run visualization: ' + e.message);
+      }
+    }
+
+    // Bind run handler
+    document.getElementById('runBtn').addEventListener('click', run);
+  </script>
+</body>
+</html>
