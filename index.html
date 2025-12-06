@@ -202,6 +202,26 @@
     }
 
     /**
+     * Normalize Neo4j Aura secure schemes to avoid duplicate encryption
+     * configuration (URL + driver config) that triggers driver errors.
+     * @param {string} rawUri
+     * @returns {{serverUrl: string, driverConfig: object}}
+     */
+    function normalizeAuraUri(rawUri) {
+      const lower = rawUri.toLowerCase();
+
+      // If the URI already encodes encryption (neo4j+s / neo4j+ssc), avoid
+      // specifying encryption/trust in the driver config to prevent the driver
+      // from seeing duplicate settings (URL + config), which triggers
+      // "Encryption/trust can only be configured either through URL or config, not both".
+      if (lower.startsWith('neo4j+s://') || lower.startsWith('neo4j+ssc://')) {
+        return { serverUrl: rawUri, driverConfig: {} };
+      }
+
+      return { serverUrl: rawUri, driverConfig: {} };
+    }
+
+    /**
      * Create or re-create the visualization based on user input.
      */
     function run() {
@@ -221,13 +241,21 @@
           viz.clearNetwork();
         }
 
+        const { serverUrl, driverConfig } = normalizeAuraUri(uri);
+
+        const neo4jConfig = {
+          serverUrl,
+          serverUser: user,
+          serverPassword: password,
+        };
+
+        if (driverConfig && Object.keys(driverConfig).length > 0) {
+          neo4jConfig.driverConfig = driverConfig;
+        }
+
         const config = {
           containerId: 'viz',
-          neo4j: {
-            serverUrl: uri,
-            serverUser: user,
-            serverPassword: password,
-          },
+          neo4j: neo4jConfig,
           labels: {},
           relationships: {},
           visConfig: {
