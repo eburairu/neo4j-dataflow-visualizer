@@ -163,3 +163,5 @@ if (closeNodeDetailsButton) {
     unselectAll();
   });
 }
+
+export { run };
