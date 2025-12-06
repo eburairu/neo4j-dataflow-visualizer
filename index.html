@@ -202,6 +202,41 @@
     }
 
     /**
+     * Normalize the user-supplied Aura URI without setting any encryption
+     * options in driverConfig to avoid "Encryption/trust configured twice"
+     * errors. If an Aura host is provided without a secure scheme, upgrade
+     * it to `neo4j+s://` so TLS is still used.
+     * @param {string} rawUri
+     * @returns {{serverUrl: string, driverConfig: object}}
+     */
+    function normalizeAuraUri(rawUri) {
+      const trimmed = rawUri.trim();
+
+      // Keep secure schemes as-is but avoid duplicating encryption config.
+      const securePattern = /^(neo4j|bolt)\+ss?c?:\/\//i;
+      if (securePattern.test(trimmed)) {
+        return { serverUrl: trimmed, driverConfig: {} };
+      }
+
+      try {
+        const url = new URL(trimmed);
+        const hostname = url.hostname?.toLowerCase();
+        const isAuraHost = hostname.endsWith('.databases.neo4j.io');
+        const protocol = url.protocol.replace(':', '').toLowerCase();
+
+        if (isAuraHost && (protocol === 'neo4j' || protocol === 'bolt')) {
+          const upgraded = trimmed.replace(/^(neo4j|bolt):\/\//i, 'neo4j+s://');
+          logStatus(`Aura host detected。安全なスキームに変換しました: ${upgraded}`);
+          return { serverUrl: upgraded, driverConfig: {} };
+        }
+      } catch (e) {
+        // If the URL constructor fails, fall through and use the raw value.
+      }
+
+      return { serverUrl: trimmed, driverConfig: {} };
+    }
+
+    /**
      * Create or re-create the visualization based on user input.
      */
     function run() {
@@ -221,12 +256,15 @@
           viz.clearNetwork();
         }
 
+        const { serverUrl, driverConfig } = normalizeAuraUri(uri);
+
         const config = {
           containerId: 'viz',
           neo4j: {
-            serverUrl: uri,
+            serverUrl,
             serverUser: user,
             serverPassword: password,
+            driverConfig,
           },
           labels: {},
           relationships: {},
