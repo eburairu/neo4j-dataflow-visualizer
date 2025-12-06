@@ -246,25 +246,6 @@
   </header>
   <main>
     <section id="control-panel" aria-label="Connection and Query Panel">
-      <details id="credentials" open>
-        <summary>認証情報（実行後は折りたたみ可能）</summary>
-        <div>
-          <label for="uri">AuraDB URI</label>
-          <input id="uri" type="text" placeholder="neo4j+s://xxxx.databases.neo4j.io" />
-        </div>
-        <div>
-          <label for="user">Username</label>
-          <input id="user" type="text" />
-        </div>
-        <div>
-          <label for="password">Password</label>
-          <input id="password" type="password" />
-        </div>
-      </details>
-      <div>
-        <label for="cypher">Cypher Query</label>
-        <textarea id="cypher">MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 100;</textarea>
-      </div>
       <div class="panel-content">
         <details id="credentials" open>
           <summary>認証情報（実行後は折りたたみ可能）</summary>
