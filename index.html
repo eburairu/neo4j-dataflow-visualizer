@@ -57,18 +57,25 @@
     .search-bar {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
     .search-bar input[type="search"] {
-      min-width: 220px;
+      flex: 1;
+      width: clamp(240px, 36vw, 420px);
+      min-width: 200px;
+      max-width: 520px;
+      padding: 10px 12px;
+      font-size: 15px;
+      line-height: 1.5;
       background: #f4f7fb;
       border: 1px solid rgba(255, 255, 255, 0.35);
+      border-radius: 10px;
       color: #0b2948;
     }
 
     .search-bar input[type="search"]::placeholder {
-      color: rgba(11, 41, 72, 0.8);
+      color: rgba(11, 41, 72, 0.65);
     }
 
     .search-feedback {
