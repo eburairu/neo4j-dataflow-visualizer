@@ -11,7 +11,14 @@ const DEFAULT_DRIVER_CONFIG = {
  * @returns {{serverUrl: string, driverConfig: object}}
  */
 export function normalizeAuraUri(rawUri, logger = () => {}) {
+  if (typeof rawUri !== 'string') {
+    throw new TypeError('Aura URI must be a string');
+  }
+
   const trimmed = rawUri.trim();
+  if (!trimmed) {
+    throw new Error('Aura URI is required');
+  }
   const driverConfig = { ...DEFAULT_DRIVER_CONFIG };
 
   const securePattern = /^(neo4j|bolt)\+ss?c?:\/\//i;
@@ -21,14 +28,15 @@ export function normalizeAuraUri(rawUri, logger = () => {}) {
     return { serverUrl: normalizedUri, driverConfig };
   }
 
+  let parsedUrl;
   try {
-    const url = new URL(trimmed);
-    const hostname = url.hostname?.toLowerCase();
+    parsedUrl = new URL(trimmed);
+    const hostname = parsedUrl.hostname?.toLowerCase();
     const isAuraHost = hostname.endsWith('.databases.neo4j.io');
-    const protocol = url.protocol.replace(':', '').toLowerCase();
+    const protocol = parsedUrl.protocol.replace(':', '').toLowerCase();
 
     if (isAuraHost && (protocol === 'neo4j' || protocol === 'bolt')) {
-      const upgraded = `neo4j+s://${url.host}${url.pathname}${url.search}${url.hash}`;
+      const upgraded = `neo4j+s://${parsedUrl.host}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`;
       logger('AuraホストのURIをTLS付きのneo4j+sスキームに自動変換しました。');
       return { serverUrl: upgraded, driverConfig };
     }
@@ -42,6 +50,10 @@ export function normalizeAuraUri(rawUri, logger = () => {}) {
     return { serverUrl: `neo4j+s://${trimmed}`, driverConfig };
   }
 
+  if (!parsedUrl) {
+    throw new Error('Invalid Aura URI format');
+  }
+
   return { serverUrl: trimmed, driverConfig };
 }
 
@@ -51,6 +63,10 @@ export function normalizeAuraUri(rawUri, logger = () => {}) {
  * @returns {object}
  */
 export function buildNeoVisConfig({ serverUrl, user, password }) {
+  if (!serverUrl || !user || !password) {
+    throw new Error('serverUrl, user, and password are required to build NeoVis config');
+  }
+
   return {
     containerId: 'viz',
     neo4j: {
